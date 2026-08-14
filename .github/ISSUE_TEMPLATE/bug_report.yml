@@ -1,7 +1,7 @@
 name: Bug report
 description: Report a reproducible problem with the plugin
 labels: [bug]
-assignees: [joseporto]
+assignees: [kirillram]
 body:
   - type: markdown
     attributes:

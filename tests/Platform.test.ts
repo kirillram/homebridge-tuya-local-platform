@@ -147,7 +147,7 @@ describe('Platform Registration', () => {
   it('should register the platform with correct names', () => {
     registerFn(mockHomebridge)
     expect(mockHomebridge.registerPlatform).toHaveBeenCalledWith(
-      'homebridge-tuya-local-platform',
+      '@kirillram/homebridge-tuya-local-platform',
       'TuyaLocalPlatform',
       expect.any(Function),
       true,
@@ -205,8 +205,8 @@ describe('Platform Registration', () => {
 
     const platform = new registeredPlatform(log, config, api)
     expect(platform._expectedUUIDs).toHaveLength(2)
-    expect(platform._expectedUUIDs[0]).toBe('uuid-homebridge-tuya-local-platform:abc123')
-    expect(platform._expectedUUIDs[1]).toBe('uuid-homebridge-tuya-local-platform:fake:def456')
+    expect(platform._expectedUUIDs[0]).toBe('uuid-@kirillram/homebridge-tuya-local-platform:abc123')
+    expect(platform._expectedUUIDs[1]).toBe('uuid-@kirillram/homebridge-tuya-local-platform:fake:def456')
   })
 
   it('should register one or many platform accessories', () => {
@@ -227,14 +227,14 @@ describe('Platform Registration', () => {
 
     platform.registerPlatformAccessories(a1)
     expect(api.registerPlatformAccessories).toHaveBeenLastCalledWith(
-      'homebridge-tuya-local-platform',
+      '@kirillram/homebridge-tuya-local-platform',
       'TuyaLocalPlatform',
       [a1],
     )
 
     platform.registerPlatformAccessories([a1, a2])
     expect(api.registerPlatformAccessories).toHaveBeenLastCalledWith(
-      'homebridge-tuya-local-platform',
+      '@kirillram/homebridge-tuya-local-platform',
       'TuyaLocalPlatform',
       [a1, a2],
     )
@@ -259,9 +259,11 @@ describe('Platform Registration', () => {
     platform.removeAccessoryByUUID(accessory.UUID)
 
     expect(platform.cachedAccessories.has(accessory.UUID)).toBe(false)
-    expect(api.unregisterPlatformAccessories).toHaveBeenCalledWith('TuyaLocalPlatform', 'TuyaLocalPlatform', [
-      accessory,
-    ])
+    expect(api.unregisterPlatformAccessories).toHaveBeenCalledWith(
+      '@kirillram/homebridge-tuya-local-platform',
+      'TuyaLocalPlatform',
+      [accessory],
+    )
   })
 })
 

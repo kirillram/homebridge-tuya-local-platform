@@ -12,7 +12,7 @@
 Please report suspected vulnerabilities privately.
 
 - Preferred: GitHub private vulnerability reporting (Security tab)
-- Alternative: email jose@nubisco.io with the subject `Security: homebridge-tuya-local-platform`
+- Alternative: open a private security advisory on https://github.com/kirillram/homebridge-tuya-local-platform
 
 Please do not open public GitHub issues for security reports before disclosure is coordinated.
 

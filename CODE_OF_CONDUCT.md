@@ -59,7 +59,8 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project maintainers at jose@nubisco.io.
+reported to the project maintainers via GitHub at
+https://github.com/kirillram/homebridge-tuya-local-platform/issues.
 All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the

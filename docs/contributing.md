@@ -5,7 +5,7 @@ Contributions are welcome! This project follows strict code quality standards an
 ## Development Setup
 
 ```bash
-git clone https://github.com/nubisco/homebridge-tuya-local-platform.git
+git clone https://github.com/kirillram/homebridge-tuya-local-platform.git
 cd homebridge-tuya-local-platform
 npm install
 ```
@@ -201,11 +201,11 @@ When opening an issue, include:
 
 - **Homebridge version**: `homebridge -V`
 - **Node.js version**: `node -v`
-- **Plugin version**: Check in Homebridge UI or `npm list @nubisco/homebridge-tuya-local-platform`
+- **Plugin version**: Check in Homebridge UI or `npm list @kirillram/homebridge-tuya-local-platform`
 - **Device information**:
   - Device type (from your config)
   - Manufacturer and model
-  - Tuya protocol version (3.1, 3.3, or 3.4)
+  - Tuya protocol version (3.1, 3.3, 3.4, or 3.5)
 - **Relevant Homebridge log output** (enable debug mode if needed)
 - **Device signature** (DPS state from logs) — redact device ID and key
 
@@ -227,4 +227,4 @@ Releases are **fully automated** via semantic-release:
 
 ## Questions?
 
-Open a [discussion](https://github.com/nubisco/homebridge-tuya-local-platform/discussions) for general questions or feature requests.
+Open a [discussion](https://github.com/kirillram/homebridge-tuya-local-platform/discussions) for general questions or feature requests.

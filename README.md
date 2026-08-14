@@ -12,14 +12,13 @@
 
   <br />
 
-[![CI](https://github.com/nubisco/homebridge-tuya-local-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/nubisco/homebridge-tuya-local-platform/actions/workflows/ci.yml)
-[![GitHub release](https://img.shields.io/github/v/release/nubisco/homebridge-tuya-local-platform)](https://github.com/nubisco/homebridge-tuya-local-platform/releases)
-[![npm version](https://img.shields.io/npm/v/@nubisco/homebridge-tuya-local-platform)](https://www.npmjs.com/package/@nubisco/homebridge-tuya-local-platform)
-[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/nubisco/homebridge-tuya-local-platform/badges/coverage.json)](https://github.com/nubisco/homebridge-tuya-local-platform/actions/workflows/ci.yml)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-339933)](https://www.npmjs.com/package/@nubisco/homebridge-tuya-local-platform)
+[![CI](https://github.com/kirillram/homebridge-tuya-local-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/kirillram/homebridge-tuya-local-platform/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/kirillram/homebridge-tuya-local-platform)](https://github.com/kirillram/homebridge-tuya-local-platform/releases)
+[![npm version](https://img.shields.io/npm/v/@kirillram/homebridge-tuya-local-platform)](https://www.npmjs.com/package/@kirillram/homebridge-tuya-local-platform)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20.0.0-339933)](https://www.npmjs.com/package/@kirillram/homebridge-tuya-local-platform)
 [![Homebridge](https://img.shields.io/badge/homebridge-%3E%3D1.6.0-blue)](https://homebridge.io)
-[![license](https://img.shields.io/npm/l/@nubisco/homebridge-tuya-local-platform)](LICENSE)
-[![Docs](https://img.shields.io/website?url=https%3A%2F%2Fdocs.nubisco.io%2Fhomebridge-tuya-local-platform%2F&label=docs)](https://docs.nubisco.io/homebridge-tuya-local-platform/)
+[![license](https://img.shields.io/npm/l/@kirillram/homebridge-tuya-local-platform)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-2f855a)](https://kirillram.github.io/homebridge-tuya-local-platform/)
 
 </div>
 
@@ -46,13 +45,13 @@
 **Option 1: Homebridge UI (recommended):**
 
 1. Open the Homebridge web UI and navigate to the **Plugins** tab.
-2. Search for `@nubisco/homebridge-tuya-local-platform` and click **Install**.
+2. Search for `@kirillram/homebridge-tuya-local-platform` and click **Install**.
 3. Use the plugin's settings form to add your devices, then restart Homebridge.
 
 **Option 2: Command line:**
 
 ```bash
-npm install -g @nubisco/homebridge-tuya-local-platform
+npm install -g @kirillram/homebridge-tuya-local-platform
 ```
 
 Add to your Homebridge `config.json`:
@@ -75,13 +74,13 @@ Add to your Homebridge `config.json`:
 }
 ```
 
-> **Need your device credentials?** See the [Getting Local Keys](https://docs.nubisco.io/homebridge-tuya-local-platform/get-local-keys) guide.
+> **Need your device credentials?** See the [Getting Local Keys](https://kirillram.github.io/homebridge-tuya-local-platform/get-local-keys) guide.
 
 ---
 
 ## Why Local Control?
 
-Tuya's cloud relies on remote servers. Any outage, policy change, or internet disruption can leave your automations unresponsive. This plugin talks directly to your devices over your LAN using the Tuya protocol (v3.1, v3.3, v3.4):
+Tuya's cloud relies on remote servers. Any outage, policy change, or internet disruption can leave your automations unresponsive. This plugin talks directly to your devices over your LAN using the Tuya protocol (v3.1, v3.3, v3.4, v3.5):
 
 - **Works offline:** your smart home keeps working even when the internet is down
 - **Instant response:** no round-trip to the cloud; commands execute in milliseconds
@@ -97,7 +96,7 @@ Tuya's cloud relies on remote servers. Any outage, policy change, or internet di
 - **Energy Monitoring:** Real-time voltage, current, and power readings on supported devices
 - **Automatic Discovery:** UDP broadcast discovery finds devices on your local network automatically
 - **Flexible Configuration:** Override DataPoints (DPs) and tune device behavior per accessory
-- **Multi-protocol Support:** Full encryption and authentication for Tuya protocol v3.1, v3.3, and v3.4
+- **Multi-protocol Support:** Full encryption and authentication for Tuya protocol v3.1, v3.3, v3.4, and v3.5
 - **TypeScript:** Fully typed codebase with comprehensive test coverage
 
 ---
@@ -132,19 +131,19 @@ Tuya's cloud relies on remote servers. Any outage, policy change, or internet di
 
 > The `type` value is **case-insensitive**. `"SimpleLight"`, `"simplelight"`, and `"SIMPLELIGHT"` all work.
 
-Full per-device configuration details and DataPoint overrides are covered in the [Supported Device Types](https://docs.nubisco.io/homebridge-tuya-local-platform/device-types) docs.
+Full per-device configuration details and DataPoint overrides are covered in the [Supported Device Types](https://kirillram.github.io/homebridge-tuya-local-platform/device-types) docs.
 
 ---
 
 ## Documentation
 
-Full documentation is available at **[docs.nubisco.io/homebridge-tuya-local-platform](https://docs.nubisco.io/homebridge-tuya-local-platform/)**, including:
+Full documentation is available at **[kirillram.github.io/homebridge-tuya-local-platform](https://kirillram.github.io/homebridge-tuya-local-platform/)**, including:
 
-- [Installation](https://docs.nubisco.io/homebridge-tuya-local-platform/installation)
-- [Getting Local Keys](https://docs.nubisco.io/homebridge-tuya-local-platform/get-local-keys)
-- [Configuration](https://docs.nubisco.io/homebridge-tuya-local-platform/configuration)
-- [Supported Device Types](https://docs.nubisco.io/homebridge-tuya-local-platform/device-types)
-- [Troubleshooting](https://docs.nubisco.io/homebridge-tuya-local-platform/troubleshooting)
+- [Installation](https://kirillram.github.io/homebridge-tuya-local-platform/installation)
+- [Getting Local Keys](https://kirillram.github.io/homebridge-tuya-local-platform/get-local-keys)
+- [Configuration](https://kirillram.github.io/homebridge-tuya-local-platform/configuration)
+- [Supported Device Types](https://kirillram.github.io/homebridge-tuya-local-platform/device-types)
+- [Troubleshooting](https://kirillram.github.io/homebridge-tuya-local-platform/troubleshooting)
 
 ---
 
@@ -164,8 +163,8 @@ For security vulnerabilities, please see [SECURITY.md](SECURITY.md) for responsi
 
 If this plugin helps your Homebridge setup, consider sponsoring development. Maintaining device integrations, testing hardware, and providing support takes significant time. GitHub Sponsors helps ensure long-term maintenance.
 
-- ❤️ [Sponsor via GitHub](https://github.com/sponsors/joseporto)
-- ⭐ [Star the repository](https://github.com/nubisco/homebridge-tuya-local-platform)
+- ❤️ [Sponsor via GitHub](https://github.com/sponsors/kirillram)
+- ⭐ [Star the repository](https://github.com/kirillram/homebridge-tuya-local-platform)
 
 ---
 

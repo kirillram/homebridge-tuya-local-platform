@@ -47,11 +47,36 @@ vi.mock('dgram', () => {
     const socket = new EventEmitter()
     ;(socket as any).bind = vi.fn((port: number, cb: () => void) => cb())
     ;(socket as any).close = vi.fn()
+    ;(socket as any).setBroadcast = vi.fn()
+    ;(socket as any).send = vi.fn()
     ;(socket as any).removeAllListeners = vi.fn(() => socket)
     return socket
   })
   return { default: { createSocket }, createSocket }
 })
+
+/**
+ * Build a 6699 AES-GCM discovery frame (protocol 3.5).
+ */
+function buildGcmDiscoveryFrame(payload: Record<string, unknown>, includeRetcode = true): Buffer {
+  const json = Buffer.from(JSON.stringify(payload))
+  const plaintext = includeRetcode ? Buffer.concat([Buffer.alloc(4), json]) : json
+
+  const header = Buffer.alloc(18)
+  header.writeUInt32BE(0x00006699, 0)
+  header.writeUInt16BE(0, 4)
+  header.writeUInt32BE(1, 6)
+  header.writeUInt32BE(0x13, 10) // UDP_NEW
+  header.writeUInt32BE(plaintext.length + 28, 14)
+
+  const iv = Buffer.from('123456789012') // 12 bytes
+  const cipher = crypto.createCipheriv('aes-128-gcm', UDP_KEY, iv)
+  cipher.setAAD(header.slice(4, 18))
+  const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()])
+  const tag = cipher.getAuthTag()
+
+  return Buffer.concat([header, iv, encrypted, tag, Buffer.from([0x00, 0x00, 0x99, 0x66])])
+}
 
 describe('TuyaDiscovery', () => {
   let log: ReturnType<typeof createMockLogger>
@@ -153,6 +178,39 @@ describe('TuyaDiscovery', () => {
 
       expect(discoverSpy).toHaveBeenCalledTimes(1)
       expect(discoverSpy.mock.calls[0][0].id).toBe('enc-device')
+      discovery.stop()
+    })
+
+    it('should parse 3.5 GCM discovery on port 6667', () => {
+      discovery.start({ log, ids: ['gcm-device'] })
+      const discoverSpy = vi.fn()
+      discovery.on('discover', discoverSpy)
+
+      const payload = { gwId: 'gcm-device', ip: '192.168.1.70', version: '3.5' }
+      const frame = buildGcmDiscoveryFrame(payload)
+      const info = { address: '192.168.1.70', port: 6667, family: 'IPv4', size: frame.length }
+
+      ;(discovery as any)._onDgramMessage(6667, frame, info)
+
+      expect(discoverSpy).toHaveBeenCalledTimes(1)
+      expect(discoverSpy.mock.calls[0][0].id).toBe('gcm-device')
+      expect(discoverSpy.mock.calls[0][0].version).toBe('3.5')
+      discovery.stop()
+    })
+
+    it('should parse 3.5 GCM discovery on port 7000', () => {
+      discovery.start({ log, ids: ['solicit-device'] })
+      const discoverSpy = vi.fn()
+      discovery.on('discover', discoverSpy)
+
+      const payload = { gwId: 'solicit-device', ip: '192.168.1.80', version: '3.5' }
+      const frame = buildGcmDiscoveryFrame(payload)
+      const info = { address: '192.168.1.80', port: 7000, family: 'IPv4', size: frame.length }
+
+      ;(discovery as any)._onDgramMessage(7000, frame, info)
+
+      expect(discoverSpy).toHaveBeenCalledTimes(1)
+      expect(discoverSpy.mock.calls[0][0].id).toBe('solicit-device')
       discovery.stop()
     })
 

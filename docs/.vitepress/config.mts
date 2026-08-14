@@ -13,16 +13,9 @@ export default defineConfig({
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:title', content: 'Homebridge Tuya Local Platform' }],
     ['meta', { property: 'og:description', content: 'Control Tuya devices locally over LAN through Apple HomeKit.' }],
-    [
-      'script',
-      {
-        defer: '',
-        src: 'https://analytics.nubisco.io/script.js',
-      },
-    ],
   ],
   sitemap: {
-    hostname: 'https://docs.nubisco.io/homebridge-tuya-local-platform/',
+    hostname: 'https://kirillram.github.io/homebridge-tuya-local-platform/',
   },
 
   lastUpdated: true,
@@ -36,8 +29,8 @@ export default defineConfig({
       {
         text: 'Links',
         items: [
-          { text: 'npm', link: 'https://www.npmjs.com/package/@nubisco/homebridge-tuya-local-platform' },
-          { text: 'GitHub', link: 'https://github.com/nubisco/homebridge-tuya-local-platform' },
+          { text: 'npm', link: 'https://www.npmjs.com/package/@kirillram/homebridge-tuya-local-platform' },
+          { text: 'GitHub', link: 'https://github.com/kirillram/homebridge-tuya-local-platform' },
         ],
       },
     ],
@@ -75,10 +68,10 @@ export default defineConfig({
       },
     ],
 
-    socialLinks: [{ icon: 'github', link: 'https://github.com/nubisco/homebridge-tuya-local-platform' }],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/kirillram/homebridge-tuya-local-platform' }],
 
     editLink: {
-      pattern: 'https://github.com/nubisco/homebridge-tuya-local-platform/edit/master/docs/:path',
+      pattern: 'https://github.com/kirillram/homebridge-tuya-local-platform/edit/master/docs/:path',
       text: 'Edit this page on GitHub',
     },
 
@@ -92,7 +85,7 @@ export default defineConfig({
 
     footer: {
       message: 'Released under the MIT License.',
-      copyright: 'Copyright © 2026 Nubisco',
+      copyright: 'Copyright © 2026 kirillram',
     },
   },
 })

@@ -62,12 +62,19 @@ class TuyaAccessory extends EventEmitter {
 
     this.log = props.log
     this.context = { version: '3.1', port: 6668, ...props } as TuyaAccessory['context']
+    if (!this.context.version) this.context.version = '3.1'
     this.state = {}
     this._cachedBuffer = Buffer.allocUnsafe(0)
 
     const version = parseFloat(this.context.version || '3.1')
     const handlerName =
-      version < 3.2 ? '_msgHandler_3_1' : this.context.version === '3.4' ? '_msgHandler_3_4' : '_msgHandler_3_3'
+      version < 3.2
+        ? '_msgHandler_3_1'
+        : this.context.version === '3.4'
+          ? '_msgHandler_3_4'
+          : this.context.version === '3.5'
+            ? '_msgHandler_3_5'
+            : '_msgHandler_3_3'
     this._msgQueue = async.queue(this[handlerName].bind(this) as async.AsyncWorker<MessageTask>, 1)
 
     if (version >= 3.2) {
@@ -144,7 +151,7 @@ class TuyaAccessory extends EventEmitter {
     }
 
     this._socket.on('connect', () => {
-      if (this.context.version !== '3.4') {
+      if (!this._needsSessionHandshake()) {
         clearTimeout(this._socket._connTimeout!)
 
         this.connected = true
@@ -163,7 +170,7 @@ class TuyaAccessory extends EventEmitter {
       if (this.context.intro === false) return
       this.connected = true
 
-      if (this.context.version === '3.4') {
+      if (this._needsSessionHandshake()) {
         this._tmpLocalKey = crypto.randomBytes(16)
         const payload: SendPayload = {
           data: this._tmpLocalKey,
@@ -179,15 +186,19 @@ class TuyaAccessory extends EventEmitter {
     this._socket.on('data', (msg: Buffer) => {
       this._cachedBuffer = Buffer.concat([this._cachedBuffer, msg])
 
+      const is35 = this.context.version === '3.5'
+      const prefixHex = is35 ? '00006699' : '000055aa'
+      const suffixHex = is35 ? '00009966' : '0000aa55'
+
       do {
-        const startingIndex = this._cachedBuffer.indexOf('000055aa', 'hex')
+        const startingIndex = this._cachedBuffer.indexOf(prefixHex, 'hex')
         if (startingIndex === -1) {
           this._cachedBuffer = Buffer.allocUnsafe(0)
           break
         }
         if (startingIndex !== 0) this._cachedBuffer = this._cachedBuffer.slice(startingIndex)
 
-        let endingIndex = this._cachedBuffer.indexOf('0000aa55', 'hex')
+        let endingIndex = this._cachedBuffer.indexOf(suffixHex, 'hex')
         if (endingIndex === -1) break
 
         endingIndex += 4
@@ -252,6 +263,14 @@ class TuyaAccessory extends EventEmitter {
       this.log.debug(`decrementing this._connectionAttempts, currently ${this._connectionAttempts}`)
       this._connectionAttempts--
     }, 10000)
+  }
+
+  private _needsSessionHandshake(): boolean {
+    return this.context.version === '3.4' || this.context.version === '3.5'
+  }
+
+  private _isNewProtocol(): boolean {
+    return this.context.version === '3.4' || this.context.version === '3.5'
   }
 
   private _msgHandler_3_1(task: MessageTask, callback: () => void): void {
@@ -565,6 +584,146 @@ class TuyaAccessory extends EventEmitter {
     callback()
   }
 
+  private _msgHandler_3_5(task: MessageTask, callback: () => void): void {
+    if (!(task.msg instanceof Buffer)) return callback()
+
+    const len = task.msg.length
+    if (len < 22 || task.msg.readUInt32BE(0) !== 0x00006699 || task.msg.readUInt32BE(len - 4) !== 0x00009966)
+      return callback()
+
+    const cmd = task.msg.readUInt32BE(10)
+
+    // CONTROL / CONTROL_NEW acks can be empty after decrypt
+    if (cmd === 7 || cmd === 13) {
+      // Still try to decrypt in case the device included a DPS payload
+      try {
+        const decrypted = decrypt35(task.msg.slice(4, len - 4), this.session_key ?? this.context.key)
+        if (decrypted.length) {
+          let parsed: any
+          try {
+            let sliced = decrypted
+            if (decrypted.indexOf('3.5') === 0) sliced = decrypted.slice(15)
+            parsed = JSON.parse(sliced.toString())
+            if (parsed && parsed.data && parsed.data.dps) this._change(parsed.data.dps)
+            else if (parsed && parsed.dps) this._change(parsed.dps)
+          } catch (_ex) {
+            /* empty / non-JSON ack */
+          }
+        }
+      } catch (_ex) {
+        /* ignore empty ack decrypt failures */
+      }
+      return callback()
+    }
+
+    if (cmd === 9) {
+      if (this._socket._pinger) clearTimeout(this._socket._pinger)
+      this._socket._pinger = setTimeout(
+        () => {
+          this._socket._ping()
+        },
+        ((this.context.pingGap || 20) as number) * 1000,
+      )
+
+      return callback()
+    }
+
+    let decryptedMsg: Buffer
+    try {
+      decryptedMsg = decrypt35(task.msg.slice(4, len - 4), this.session_key ?? this.context.key)
+    } catch (err) {
+      this.log.info(
+        `Failed to decrypt 3.5 message from ${this.context.name}: ${(err as Error).message}`,
+        task.msg.toString('hex'),
+      )
+      return callback()
+    }
+
+    let parsedPayload: any
+    try {
+      let sliced = decryptedMsg
+      if (decryptedMsg.indexOf(this.context.version!) === 0) {
+        sliced = decryptedMsg.slice(15)
+      }
+      const res = JSON.parse(sliced.toString())
+      if ('data' in res) {
+        const resdata = res.data
+        resdata.t = res.t
+        parsedPayload = resdata
+      } else {
+        parsedPayload = res
+      }
+    } catch (_) {
+      parsedPayload = decryptedMsg
+    }
+
+    if (cmd === 4) {
+      this._tmpRemoteKey = (parsedPayload as Buffer).subarray(0, 16)
+      const calcLocalHmac = hmac(this._tmpLocalKey!, this.context.key).toString('hex')
+      const expLocalHmac = (parsedPayload as Buffer).slice(16, 16 + 32).toString('hex')
+      if (expLocalHmac !== calcLocalHmac) {
+        throw new Error(
+          `HMAC mismatch(keys): expected ${expLocalHmac}, was ${calcLocalHmac}. ${(parsedPayload as Buffer).toString('hex')}`,
+        )
+      }
+      const payload: SendPayload = {
+        data: hmac(this._tmpRemoteKey!, this.context.key) as unknown as Buffer,
+        encrypted: true,
+        cmd: 5,
+      }
+      this._send(payload)
+      clearTimeout(this._socket._connTimeout!)
+
+      // Derive session key (tuyapi Cipher._encrypt35 without AAD)
+      this.session_key = Buffer.from(this._tmpLocalKey!)
+      for (let i = 0; i < this._tmpLocalKey!.length; i++) {
+        this.session_key[i] = this._tmpLocalKey![i] ^ this._tmpRemoteKey![i]
+      }
+      this.session_key = encrypt35SessionKey(this.session_key, this.context.key, this._tmpLocalKey!)
+
+      this.connected = true
+      this.update()
+      this.emit('connect')
+      if (this._socket._pinger) clearTimeout(this._socket._pinger)
+      this._socket._pinger = setTimeout(() => this._socket._ping(), 1000)
+
+      return callback()
+    }
+
+    if ((cmd === 10 || cmd === 16) && parsedPayload === 'json obj data unvalid') {
+      this.log.info(`${this.context.name} (${this.context.version}) didn't respond with its current state.`)
+      this.emit('change', {}, this.state)
+      return callback()
+    }
+
+    switch (cmd) {
+      case 8:
+      case 10:
+      case 16:
+        if (parsedPayload) {
+          if (parsedPayload.dps) {
+            this._change(parsedPayload.dps)
+          } else {
+            this.log.info(`Malformed message from ${this.context.name} with command ${cmd}:`, decryptedMsg)
+            this.log.info(
+              `Raw message from ${this.context.name} (${this.context.version}) with command ${cmd}:`,
+              task.msg.toString('hex'),
+            )
+          }
+        }
+        break
+
+      default:
+        this.log.info(`Odd message from ${this.context.name} with command ${cmd}:`, decryptedMsg)
+        this.log.info(
+          `Raw message from ${this.context.name} (${this.context.version}) with command ${cmd}:`,
+          task.msg.toString('hex'),
+        )
+    }
+
+    callback()
+  }
+
   update(o?: Record<string, DPSValue>): boolean {
     const dps: DPSState = {}
     let hasDataPoint = false
@@ -591,21 +750,20 @@ class TuyaAccessory extends EventEmitter {
         t,
         dps,
       }
-      const data =
-        this.context.version === '3.4'
-          ? {
-              data: { ...payload, ctype: 0, t: undefined },
-              protocol: 5,
-              t,
-            }
-          : payload
+      const data = this._isNewProtocol()
+        ? {
+            data: { ...payload, ctype: 0, t: undefined },
+            protocol: 5,
+            t,
+          }
+        : payload
       result = this._send({
         data: data as Record<string, unknown>,
-        cmd: this.context.version === '3.4' ? 13 : 7,
+        cmd: this._isNewProtocol() ? 13 : 7,
       })
       if (result !== true) this.log.info(' Result', result)
       if (this.context.sendEmptyUpdate) {
-        this._send({ cmd: this.context.version === '3.4' ? 13 : 7 })
+        this._send({ cmd: this._isNewProtocol() ? 13 : 7 })
       }
     } else {
       result = this._send({
@@ -613,7 +771,7 @@ class TuyaAccessory extends EventEmitter {
           gwId: this.context.id,
           devId: this.context.id,
         },
-        cmd: this.context.version === '3.4' ? 16 : 10,
+        cmd: this._isNewProtocol() ? 16 : 10,
       })
     }
 
@@ -642,7 +800,8 @@ class TuyaAccessory extends EventEmitter {
 
     const version = parseFloat(this.context.version || '3.1')
     if (version < 3.2) return this._send_3_1(o)
-    if (this.context.version === '3.3') return this._send_3_3(o)
+    if (this.context.version === '3.3' || this.context.version === '3.2') return this._send_3_3(o)
+    if (this.context.version === '3.5') return this._send_3_5(o)
     return this._send_3_4(o)
   }
 
@@ -771,6 +930,41 @@ class TuyaAccessory extends EventEmitter {
 
     return this._socket.write(buffer)
   }
+
+  private _send_3_5(o: SendPayload): boolean {
+    const { cmd, data: _data } = { ...o }
+    let data = _data
+
+    if (!data) {
+      data = Buffer.allocUnsafe(0)
+    }
+    if (!(data instanceof Buffer)) {
+      if (typeof data !== 'string') {
+        data = JSON.stringify(data)
+      }
+      data = Buffer.from(data)
+    }
+
+    // Version header inside plaintext for control-like commands (matches tuyapi _encode35)
+    if (cmd !== 10 && cmd !== 9 && cmd !== 16 && cmd !== 3 && cmd !== 5 && cmd !== 18) {
+      const withHeader = Buffer.alloc((data as Buffer).length + 15)
+      Buffer.from('3.5').copy(withHeader, 0)
+      ;(data as Buffer).copy(withHeader, 15)
+      data = withHeader
+    }
+
+    this._sendCounter++
+
+    const header = Buffer.alloc(18)
+    header.writeUInt32BE(0x00006699, 0)
+    header.writeUInt16BE(0, 4)
+    header.writeUInt32BE(this._sendCounter, 6)
+    header.writeUInt32BE(cmd, 10)
+    header.writeUInt32BE((data as Buffer).length + 28, 14) // IV(12) + tag(16)
+
+    const encrypted = encrypt35Frame(data as Buffer, this.session_key ?? this.context.key, header.slice(4, 18))
+    return this._socket.write(Buffer.concat([header, encrypted]))
+  }
 }
 
 const encrypt34 = (data: Buffer, encryptKey: string | Buffer): Buffer => {
@@ -779,6 +973,39 @@ const encrypt34 = (data: Buffer, encryptKey: string | Buffer): Buffer => {
   const encrypted = cipher.update(data)
   cipher.final()
   return encrypted
+}
+
+/** Session-key derivation encrypt (tuyapi _encrypt35 without AAD — ciphertext only). */
+const encrypt35SessionKey = (data: Buffer, encryptKey: string | Buffer, ivSource: Buffer): Buffer => {
+  const iv = ivSource.slice(0, 12)
+  const cipher = crypto.createCipheriv('aes-128-gcm', encryptKey, iv)
+  return Buffer.concat([cipher.update(data), cipher.final()])
+}
+
+/** Full 3.5 frame body: IV + ciphertext + tag + footer (tuyapi _encrypt35 with AAD). */
+const encrypt35Frame = (data: Buffer, encryptKey: string | Buffer, aad: Buffer): Buffer => {
+  const iv = Buffer.from((Date.now() * 10).toString().slice(0, 12))
+  const cipher = crypto.createCipheriv('aes-128-gcm', encryptKey, iv)
+  cipher.setAAD(aad)
+  const encrypted = Buffer.concat([cipher.update(data), cipher.final()])
+  const tag = cipher.getAuthTag()
+  return Buffer.concat([iv, encrypted, tag, Buffer.from([0x00, 0x00, 0x99, 0x66])])
+}
+
+/**
+ * Decrypt 3.5 payload (header+iv+ct+tag, no prefix/footer). Matches tuyapi Cipher._decrypt35.
+ */
+const decrypt35 = (data: Buffer, decryptKey: string | Buffer): Buffer => {
+  const header = data.slice(0, 14)
+  const iv = data.slice(14, 26)
+  const tag = data.slice(data.length - 16)
+  const ciphertext = data.slice(26, data.length - 16)
+
+  const decipher = crypto.createDecipheriv('aes-128-gcm', decryptKey, iv)
+  decipher.setAuthTag(tag)
+  decipher.setAAD(header)
+  const result = Buffer.concat([decipher.update(ciphertext), decipher.final()])
+  return result.slice(4) // strip 32-bit return code
 }
 
 const hmac = (data: Buffer, hmacKey: string | Buffer): Buffer => {

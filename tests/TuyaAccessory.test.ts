@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { EventEmitter } from 'events'
+import crypto from 'crypto'
 import TuyaAccessory from '../src/protocol/TuyaAccessory'
 import { createMockLogger } from './helpers'
 
@@ -400,6 +401,102 @@ describe('TuyaAccessory', () => {
     it('selects _msgHandler_3_4 for version 3.4', () => {
       const acc = new TuyaAccessory(makeProps({ version: '3.4' }) as any)
       expect(acc).toBeInstanceOf(TuyaAccessory)
+    })
+
+    it('selects _msgHandler_3_5 for version 3.5', () => {
+      const acc = new TuyaAccessory(makeProps({ version: '3.5' }) as any)
+      expect(acc).toBeInstanceOf(TuyaAccessory)
+    })
+  })
+
+  // ── Protocol 3.5 ────────────────────────────────────────────────────────────
+  describe('protocol 3.5', () => {
+    const KEY = 'abcdef1234567890'
+
+    beforeEach(() => {
+      // Handshake tests rely on async.queue microtasks; avoid fake-timer reconnect loops
+      vi.useRealTimers()
+    })
+
+    function buildGcmFrame(cmd: number, plaintext: Buffer, key: string | Buffer = KEY, seq = 1): Buffer {
+      // Device→client plaintext includes a 4-byte return code prefix
+      const withRetcode = Buffer.concat([Buffer.alloc(4), plaintext])
+      const header = Buffer.alloc(18)
+      header.writeUInt32BE(0x00006699, 0)
+      header.writeUInt16BE(0, 4)
+      header.writeUInt32BE(seq, 6)
+      header.writeUInt32BE(cmd, 10)
+      header.writeUInt32BE(withRetcode.length + 28, 14)
+
+      const iv = Buffer.from('123456789012')
+      const cipher = crypto.createCipheriv('aes-128-gcm', key, iv)
+      cipher.setAAD(header.slice(4, 18))
+      const encrypted = Buffer.concat([cipher.update(withRetcode), cipher.final()])
+      const tag = cipher.getAuthTag()
+      return Buffer.concat([header, iv, encrypted, tag, Buffer.from([0x00, 0x00, 0x99, 0x66])])
+    }
+
+    function flushQueue(): Promise<void> {
+      return new Promise((resolve) => setImmediate(resolve))
+    }
+
+    it('completes session key negotiation and emits connect', async () => {
+      const acc = new TuyaAccessory(makeProps({ version: '3.5', connect: true }) as any)
+      expect(lastSocket).toBeTruthy()
+
+      const connectSpy = vi.fn()
+      acc.on('connect', connectSpy)
+
+      lastSocket.emit('connect')
+      lastSocket.emit('ready')
+
+      // Handshake start (cmd 3) should have been written
+      expect(lastSocket.write).toHaveBeenCalled()
+      const startFrame: Buffer = lastSocket.write.mock.calls[0][0]
+      expect(startFrame.readUInt32BE(0)).toBe(0x00006699)
+      expect(startFrame.readUInt32BE(10)).toBe(3)
+
+      const localKey = (acc as any)._tmpLocalKey as Buffer
+      expect(localKey).toBeInstanceOf(Buffer)
+      expect(localKey.length).toBe(16)
+
+      const remoteKey = Buffer.from('fedcba0987654321')
+      const remoteHmac = crypto.createHmac('sha256', KEY).update(localKey).digest()
+      const respPlain = Buffer.concat([remoteKey, remoteHmac])
+      const respFrame = buildGcmFrame(4, respPlain, KEY, 2)
+
+      lastSocket.emit('data', respFrame)
+      await flushQueue()
+
+      expect(acc.session_key).toBeInstanceOf(Buffer)
+      expect(acc.session_key!.length).toBe(16)
+      expect(connectSpy).toHaveBeenCalled()
+
+      // Finish (cmd 5) should have been sent
+      const cmds = lastSocket.write.mock.calls.map((c: any[]) => (c[0] as Buffer).readUInt32BE(10))
+      expect(cmds).toContain(5)
+    })
+
+    it('decrypts DP updates with the session key', async () => {
+      const acc = new TuyaAccessory(makeProps({ version: '3.5', connect: true }) as any)
+
+      lastSocket.emit('connect')
+      lastSocket.emit('ready')
+      const localKey = (acc as any)._tmpLocalKey as Buffer
+      const remoteKey = Buffer.from('fedcba0987654321')
+      const remoteHmac = crypto.createHmac('sha256', KEY).update(localKey).digest()
+      lastSocket.emit('data', buildGcmFrame(4, Buffer.concat([remoteKey, remoteHmac]), KEY, 2))
+      await flushQueue()
+
+      const changeSpy = vi.fn()
+      acc.on('change', changeSpy)
+
+      const dpsPayload = Buffer.from(JSON.stringify({ dps: { '1': true }, t: 123 }))
+      lastSocket.emit('data', buildGcmFrame(16, dpsPayload, acc.session_key!, 3))
+      await flushQueue()
+
+      expect(changeSpy).toHaveBeenCalled()
+      expect(acc.state['1']).toBe(true)
     })
   })
 })

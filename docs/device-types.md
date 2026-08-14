@@ -389,7 +389,7 @@ While defined mainly to develop a more robust device type, this can be used to c
 ### Garage Doors
 
 ::: warning Early Testing
-If your garage door or garage door opener does more than just open and close (e.g., reports its position or detects obstacles), please [create an issue](https://github.com/nubisco/homebridge-tuya-local-platform/issues/new) and paste your signature with any information you can provide.
+If your garage door or garage door opener does more than just open and close (e.g., reports its position or detects obstacles), please [create an issue](https://github.com/kirillram/homebridge-tuya-local-platform/issues/new) and paste your signature with any information you can provide.
 :::
 
 ```json5

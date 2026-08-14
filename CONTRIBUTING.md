@@ -1,13 +1,13 @@
 # Contributing
 
-Thanks for contributing to `@nubisco/homebridge-tuya-local-platform`.
+Thanks for contributing to `@kirillram/homebridge-tuya-local-platform`.
 
 For full contributor documentation, see `docs/contributing.md`.
 
 ## Local Setup
 
 ```bash
-git clone https://github.com/nubisco/homebridge-tuya-local-platform.git
+git clone https://github.com/kirillram/homebridge-tuya-local-platform.git
 cd homebridge-tuya-local-platform
 npm install
 ```

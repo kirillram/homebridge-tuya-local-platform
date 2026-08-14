@@ -30,7 +30,7 @@ import {
 
 import type { ClassDefMap, TuyaDeviceConfig, TuyaPlatformConfig } from './types'
 
-const PLUGIN_NAME = 'homebridge-tuya-local-platform'
+const PLUGIN_NAME = '@kirillram/homebridge-tuya-local-platform'
 const PLATFORM_NAME = 'TuyaLocalPlatform'
 
 const CLASS_DEF: ClassDefMap = {
@@ -113,6 +113,12 @@ class TuyaLocalPlatform {
         device.key = ('' + device.key).trim()
         device.type = ('' + device.type).trim()
         device.ip = ('' + (device.ip || '')).trim()
+        if (device.version !== undefined && device.version !== null) {
+          device.version = ('' + device.version).trim()
+          if (!device.version || device.version === 'auto' || device.version === 'null') {
+            delete device.version
+          }
+        }
       } catch (_ex) {
         /* ignore */
       }
@@ -149,6 +155,8 @@ class TuyaLocalPlatform {
       const device = new TuyaAccessory({
         ...devices[config.id],
         ...config,
+        // Prefer explicitly configured version over discovery when set
+        version: devices[config.id].version || config.version,
         log: this.log,
         UUID: UUID.generate(PLUGIN_NAME + ':' + config.id),
         connect: false,
@@ -287,7 +295,7 @@ class TuyaLocalPlatform {
     this.log.warn('Unregistering', homebridgeAccessory.displayName)
 
     this.cachedAccessories.delete(homebridgeAccessory.UUID)
-    this.api.unregisterPlatformAccessories(PLATFORM_NAME, PLATFORM_NAME, [homebridgeAccessory])
+    this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [homebridgeAccessory])
   }
 
   removeAccessoryByUUID(uuid: string): void {

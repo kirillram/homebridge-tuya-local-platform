@@ -6,8 +6,8 @@
 
 ## Protocol Limitations
 
-- Protocol version **3.5** is not currently supported.
-- Some newer Tuya devices may use protocol versions or encryption methods not yet implemented.
+- Some niche Tuya firmware variants may still use undocumented encryption or framing.
+- If auto-discovery fails for a 3.5 device, set `ip` and `version: "3.5"` explicitly.
 
 ## Single Connection Limit
 

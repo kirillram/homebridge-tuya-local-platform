@@ -2,7 +2,7 @@
   "pluginAlias": "TuyaLocalPlatform",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "For setup instructions, device configuration, and troubleshooting, visit the [documentation](https://docs.nubisco.io/homebridge-tuya-local-platform/).",
+  "headerDisplay": "For setup instructions, device configuration, and troubleshooting, visit the [documentation](https://github.com/kirillram/homebridge-tuya-local-platform).",
   "footerDisplay": "",
   "schema": {
     "type": "object",
@@ -64,6 +64,10 @@
                   "enum": ["SimpleDimmer"]
                 },
                 {
+                  "title": "Simple Dimmer (Alt)",
+                  "enum": ["SimpleDimmer2"]
+                },
+                {
                   "title": "Simple Heater",
                   "enum": ["SimpleHeater"]
                 },
@@ -84,6 +88,10 @@
                   "enum": ["RGBTWOutlet"]
                 },
                 {
+                  "title": "Switch",
+                  "enum": ["Switch"]
+                },
+                {
                   "title": "Simple Fan",
                   "enum": ["Fan"]
                 },
@@ -98,6 +106,14 @@
                 {
                   "title": "Dehumidifier",
                   "enum": ["Dehumidifier"]
+                },
+                {
+                  "title": "Water Valve",
+                  "enum": ["WaterValve"]
+                },
+                {
+                  "title": "Oil Diffuser",
+                  "enum": ["OilDiffuser"]
                 },
                 {
                   "title": "Circuit Breaker Monitor (Read-Only)",
@@ -115,7 +131,7 @@
             "id": {
               "type": "string",
               "title": "Tuya ID",
-              "description": "If you don't have the Tuya ID or Key, follow the steps in the <a href='https://docs.nubisco.io/homebridge-tuya-local-platform/get-local-keys' target='_blank'>Getting Local Keys</a> guide.",
+              "description": "If you don't have the Tuya ID or Key, follow the steps in the <a href='https://github.com/kirillram/homebridge-tuya-local-platform' target='_blank'>plugin README</a>.",
               "condition": {
                 "functionBody": "return model.devices && model.devices[arrayIndices].type !== 'null';"
               }
@@ -130,6 +146,15 @@
             "ip": {
               "title": "IP Address",
               "type": "string",
+              "condition": {
+                "functionBody": "return model.devices && model.devices[arrayIndices].type !== 'null';"
+              }
+            },
+            "version": {
+              "title": "Protocol Version",
+              "type": "string",
+              "placeholder": "3.5",
+              "description": "Optional. Leave blank for auto-discovery. Use 3.1, 3.3, 3.4, or 3.5 when needed.",
               "condition": {
                 "functionBody": "return model.devices && model.devices[arrayIndices].type !== 'null';"
               }
@@ -339,20 +364,18 @@
             },
             "dpCurrentTemperature": {
               "type": "integer",
-              "placeholder": "110",
-              "title": "Current Temperature DP",
-              "description": "Data point for current temperature reading. For dehumidifiers, use the temperature DP, not humidity.",
+              "placeholder": "3",
               "condition": {
-                "functionBody": "return model.devices && model.devices[arrayIndices] && ['AirConditioner'].includes(model.devices[arrayIndices].type);"
+                "functionBody": "return model.devices && model.devices[arrayIndices] && ['Convector', 'SimpleHeater'].includes(model.devices[arrayIndices].type);"
               }
             },
             "temperatureDivisor": {
               "type": "integer",
               "placeholder": "1",
-              "title": "Current Temperature Divisor",
-              "description": "Divisor for current temperature. Use 1 if temperature is already in degrees, 10 if in tenths of degree.",
+              "title": "Temperature Divisor",
+              "description": "Divisor for temperature value (default: 1).",
               "condition": {
-                "functionBody": "return model.devices && model.devices[arrayIndices] && ['AirConditioner'].includes(model.devices[arrayIndices].type);"
+                "functionBody": "return model.devices && model.devices[arrayIndices] && ['CircuitBreakerMonitor'].includes(model.devices[arrayIndices].type);"
               }
             },
             "dpActive": {
@@ -365,13 +388,6 @@
             "dpDesiredTemperature": {
               "type": "integer",
               "placeholder": "2",
-              "condition": {
-                "functionBody": "return model.devices && model.devices[arrayIndices] && ['Convector', 'SimpleHeater'].includes(model.devices[arrayIndices].type);"
-              }
-            },
-            "dpCurrentTemperature": {
-              "type": "integer",
-              "placeholder": "3",
               "condition": {
                 "functionBody": "return model.devices && model.devices[arrayIndices] && ['Convector', 'SimpleHeater'].includes(model.devices[arrayIndices].type);"
               }
@@ -435,13 +451,6 @@
               "type": "boolean",
               "condition": {
                 "functionBody": "return model.devices && model.devices[arrayIndices] && ['Convector'].includes(model.devices[arrayIndices].type);"
-              }
-            },
-            "temperatureDivisor": {
-              "type": "integer",
-              "placeholder": "1",
-              "condition": {
-                "functionBody": "return model.devices && model.devices[arrayIndices] && ['SimpleHeater'].includes(model.devices[arrayIndices].type);"
               }
             },
             "thresholdTemperatureDivisor": {
@@ -723,16 +732,7 @@
               "type": "integer",
               "placeholder": "16",
               "title": "DP: Switch State (READ-ONLY)",
-              "description": "Data point for breaker switch state. ⚠️ This is logged but NEVER exposed to HomeKit for safety (default: 16).",
-              "condition": {
-                "functionBody": "return model.devices && model.devices[arrayIndices] && ['CircuitBreakerMonitor'].includes(model.devices[arrayIndices].type);"
-              }
-            },
-            "temperatureDivisor": {
-              "type": "integer",
-              "placeholder": "1",
-              "title": "Temperature Divisor",
-              "description": "Divisor for temperature value (default: 1).",
+              "description": "Data point for breaker switch state. \u26a0\ufe0f This is logged but NEVER exposed to HomeKit for safety (default: 16).",
               "condition": {
                 "functionBody": "return model.devices && model.devices[arrayIndices] && ['CircuitBreakerMonitor'].includes(model.devices[arrayIndices].type);"
               }

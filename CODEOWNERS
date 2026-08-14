@@ -1,7 +1,7 @@
-# Default owner for all files
-* @joseporto
+# Default owners for everything
+* @kirillram
 
-# Critical automation and release configuration
-/.github/workflows/* @joseporto
-/package.json @joseporto
-/config.schema.json @joseporto
+# Extra review for release-critical paths
+/.github/workflows/* @kirillram
+/package.json @kirillram
+/config.schema.json @kirillram
