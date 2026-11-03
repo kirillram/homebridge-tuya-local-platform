@@ -28,7 +28,7 @@ import {
   OilDiffuserAccessory,
 } from './accessories'
 
-import type { ClassDefMap, TuyaDeviceConfig, TuyaPlatformConfig } from './types'
+import type { ClassDefMap, HAPContext, TuyaDeviceConfig, TuyaPlatformConfig } from './types'
 
 const PLUGIN_NAME = '@kirillram/homebridge-tuya-local-platform'
 const PLATFORM_NAME = 'TuyaLocalPlatform'
@@ -62,15 +62,12 @@ const CLASS_DEF: ClassDefMap = {
 let Characteristic: any, PlatformAccessory: any, Service: any, Categories: any, UUID: any
 
 module.exports = function (homebridge: any): void {
-  ;({
-    platformAccessory: PlatformAccessory,
-    hap: {
-      Characteristic,
-      Service,
-      Accessory: { Categories },
-      uuid: UUID,
-    },
-  } = homebridge)
+  PlatformAccessory = homebridge.platformAccessory
+  Characteristic = homebridge.hap.Characteristic
+  Service = homebridge.hap.Service
+  UUID = homebridge.hap.uuid
+  // Homebridge 2 / hap-nodejs expose Categories on hap; older builds nested it under Accessory
+  Categories = homebridge.hap.Categories || homebridge.hap.Accessory?.Categories
 
   homebridge.registerPlatform(PLUGIN_NAME, PLATFORM_NAME, TuyaLocalPlatform, true)
 }
@@ -79,6 +76,8 @@ class TuyaLocalPlatform {
   log: any
   config: TuyaPlatformConfig
   api: any
+  /** HAP plus this plugin's custom characteristics; Homebridge 2 freezes api.hap, so never write to it. */
+  hap: HAPContext
   cachedAccessories: Map<string, any>
   _expectedUUIDs?: string[]
 
@@ -86,7 +85,10 @@ class TuyaLocalPlatform {
     ;[this.log, this.config, this.api] = [...props]
 
     this.cachedAccessories = new Map()
-    this.api.hap.EnergyCharacteristics = EnergyCharacteristicsFactory(this.api.hap.Characteristic)
+    this.hap = {
+      ...this.api.hap,
+      EnergyCharacteristics: EnergyCharacteristicsFactory(this.api.hap.Characteristic),
+    }
 
     if (!this.config || !this.config.devices) {
       this.log('No devices found. Check that you have specified them in your config.json file.')

@@ -265,6 +265,57 @@ describe('Platform Registration', () => {
       [accessory],
     )
   })
+
+  it('starts when Homebridge 2 hands over a frozen api.hap', () => {
+    registerFn(mockHomebridge)
+    const log = Object.assign(vi.fn(), { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })
+    const hap = Object.freeze({ ...mockHomebridge.hap })
+    const api = { hap, on: vi.fn(), registerPlatformAccessories: vi.fn(), unregisterPlatformAccessories: vi.fn() }
+
+    let platform: any
+    expect(() => {
+      platform = new registeredPlatform(log, { devices: [] }, api)
+    }).not.toThrow()
+    expect(platform.hap.EnergyCharacteristics.Volts).toBeDefined()
+    expect(platform.hap.Characteristic).toBe(hap.Characteristic)
+    expect((hap as any).EnergyCharacteristics).toBeUndefined()
+  })
+
+  it('adds a light accessory when Categories is on hap, not hap.Accessory', async () => {
+    const { EventEmitter } = await import('events')
+    const categories = mockHomebridge.hap.Accessory.Categories
+    mockHomebridge.hap.Categories = categories
+    mockHomebridge.hap.Accessory = class Accessory {}
+    mockHomebridge.hap.Service.Lightbulb = { UUID: 'Lightbulb' }
+
+    registerFn(mockHomebridge)
+
+    const log = Object.assign(vi.fn(), { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() })
+    const api = {
+      hap: mockHomebridge.hap,
+      on: vi.fn(),
+      registerPlatformAccessories: vi.fn(),
+      unregisterPlatformAccessories: vi.fn(),
+    }
+    const platform = new registeredPlatform(log, { devices: [] }, api)
+
+    const device = new EventEmitter() as any
+    device.context = {
+      id: 'bf00000000000000light1',
+      type: 'RGBTWLight',
+      name: 'Lamp',
+      UUID: 'uuid-light-1',
+      version: '3.5',
+    }
+    device.state = {}
+    device._connect = vi.fn()
+
+    platform.addAccessory(device)
+    await Promise.resolve() // accessory setup finishes after the constructor chain
+
+    expect(log.error).not.toHaveBeenCalled()
+    expect(api.registerPlatformAccessories).toHaveBeenCalled()
+  })
 })
 
 describe('CLASS_DEF completeness', () => {
