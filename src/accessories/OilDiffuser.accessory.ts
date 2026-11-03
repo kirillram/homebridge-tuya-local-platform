@@ -42,15 +42,15 @@ class OilDiffuserAccessory extends BaseAccessory {
   }
 
   _isBelleLife(): boolean {
-    return this.device.context.manufacturer.trim().toLowerCase() === 'bellelife'
+    return (this.device.context.manufacturer || '').trim().toLowerCase() === 'bellelife'
   }
 
   _isGeeni(): boolean {
-    return this.device.context.manufacturer.trim().toLowerCase() === 'geeni'
+    return (this.device.context.manufacturer || '').trim().toLowerCase() === 'geeni'
   }
 
   _isAsakuki(): boolean {
-    return this.device.context.manufacturer.trim().toLowerCase() === 'asakuki'
+    return (this.device.context.manufacturer || '').trim().toLowerCase() === 'asakuki'
   }
 
   _registerPlatformAccessory(): void {
@@ -66,12 +66,12 @@ class OilDiffuserAccessory extends BaseAccessory {
     const { Service } = this.hap
 
     const humidifierName = this.device.context.name
-    let humidifierService = this.accessory.getServiceByUUIDAndSubType(Service.HumidifierDehumidifier, 'humidifier')
+    let humidifierService = this.accessory.getServiceById(Service.HumidifierDehumidifier, 'humidifier')
     if (humidifierService) this._checkServiceName(humidifierService, humidifierName)
     else humidifierService = this.accessory.addService(Service.HumidifierDehumidifier, humidifierName, 'humidifier')
 
     const lightName = this.device.context.name + ' Light'
-    let lightService = this.accessory.getServiceByUUIDAndSubType(Service.Lightbulb, 'lightbulb')
+    let lightService = this.accessory.getServiceById(Service.Lightbulb, 'lightbulb')
     if (lightService) this._checkServiceName(lightService, lightName)
     else lightService = this.accessory.addService(Service.Lightbulb, lightName, 'lightbulb')
 
@@ -89,8 +89,8 @@ class OilDiffuserAccessory extends BaseAccessory {
 
     const { Service, AdaptiveLightingController, Characteristic } = this.hap
 
-    const humidifierService = this.accessory.getServiceByUUIDAndSubType(Service.HumidifierDehumidifier, 'humidifier')
-    const lightService = this.accessory.getServiceByUUIDAndSubType(Service.Lightbulb, 'lightbulb')
+    const humidifierService = this.accessory.getServiceById(Service.HumidifierDehumidifier, 'humidifier')
+    const lightService = this.accessory.getServiceById(Service.Lightbulb, 'lightbulb')
 
     this.dpLight = this._getCustomDP(this.device.context.dpLight) || '5'
     this.dpMode = this._getCustomDP(this.device.context.dpMode) || '6'
@@ -134,47 +134,55 @@ class OilDiffuserAccessory extends BaseAccessory {
 
     // Led Light
 
-    const characteristicLightOn = lightService
-      .getCharacteristic(Characteristic.On)
-      .updateValue(this._coerceBoolean(dps[this.dpLight], false))
-      .on('get', this.getPower.bind(this, this.dpLight))
-      .on('set', this.setPower.bind(this, this.dpLight))
+    const characteristicLightOn = this._bind(
+      lightService.getCharacteristic(Characteristic.On).updateValue(this._coerceBoolean(dps[this.dpLight], false)),
+      this.getPower.bind(this, this.dpLight),
+      this.setPower.bind(this, this.dpLight),
+    )
 
-    const characteristicBrightness = lightService
-      .getCharacteristic(Characteristic.Brightness)
-      .updateValue(
-        dps[this.dpMode] === this.cmdWhite
-          ? this.convertBrightnessFromTuyaToHomeKit(dps[this.dpColor])
-          : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).b,
-      )
-      .on('get', this.getBrightness.bind(this))
-      .on('set', this.setBrightness.bind(this))
+    const characteristicBrightness = this._bind(
+      lightService
+        .getCharacteristic(Characteristic.Brightness)
+        .updateValue(
+          dps[this.dpMode] === this.cmdWhite
+            ? this.convertBrightnessFromTuyaToHomeKit(dps[this.dpColor])
+            : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).b,
+        ),
+      this.getBrightness.bind(this),
+      this.setBrightness.bind(this),
+    )
 
-    const characteristicColorTemperature = lightService
-      .getCharacteristic(Characteristic.ColorTemperature)
-      .setProps({
-        minValue: 0,
-        maxValue: 600,
-      })
-      .updateValue(
-        dps[this.dpMode] === this.cmdWhite
-          ? this.convertColorTemperatureFromTuyaToHomeKit(dps[(this as any).dpColorTemperature])
-          : 0,
-      )
-      .on('get', this.getColorTemperature.bind(this))
-      .on('set', this.setColorTemperature.bind(this))
+    const characteristicColorTemperature = this._bind(
+      lightService
+        .getCharacteristic(Characteristic.ColorTemperature)
+        .setProps({
+          minValue: 140,
+          maxValue: 500,
+        })
+        .updateValue(
+          dps[this.dpMode] === this.cmdWhite
+            ? this.convertColorTemperatureFromTuyaToHomeKit(dps[(this as any).dpColorTemperature])
+            : 140,
+        ),
+      this.getColorTemperature.bind(this),
+      this.setColorTemperature.bind(this),
+    )
 
-    const characteristicHue = lightService
-      .getCharacteristic(Characteristic.Hue)
-      .updateValue(this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).h)
-      .on('get', this.getHue.bind(this))
-      .on('set', this.setHue.bind(this))
+    const characteristicHue = this._bind(
+      lightService
+        .getCharacteristic(Characteristic.Hue)
+        .updateValue(this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).h),
+      this.getHue.bind(this),
+      this.setHue.bind(this),
+    )
 
-    const characteristicSaturation = lightService
-      .getCharacteristic(Characteristic.Saturation)
-      .updateValue(this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).s)
-      .on('get', this.getSaturation.bind(this))
-      .on('set', this.setSaturation.bind(this))
+    const characteristicSaturation = this._bind(
+      lightService
+        .getCharacteristic(Characteristic.Saturation)
+        .updateValue(this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).s),
+      this.getSaturation.bind(this),
+      this.setSaturation.bind(this),
+    )
 
     this.characteristicHue = characteristicHue
     this.characteristicSaturation = characteristicSaturation
@@ -189,55 +197,63 @@ class OilDiffuserAccessory extends BaseAccessory {
 
     // Humidifier
 
-    const characteristicActive = humidifierService
-      .getCharacteristic(Characteristic.Active)
-      .updateValue(this._getActive(dps[this.dpActive]))
-      .on('get', this.getActive.bind(this))
-      .on('set', this.setActive.bind(this))
+    const characteristicActive = this._bind(
+      humidifierService.getCharacteristic(Characteristic.Active).updateValue(this._getActive(dps[this.dpActive])),
+      this.getActive.bind(this),
+      this.setActive.bind(this),
+    )
 
-    humidifierService
-      .getCharacteristic(Characteristic.CurrentHumidifierDehumidifierState)
-      .updateValue(this._getCurrentHumidifierDehumidifierState(dps))
-      .on('get', this.getCurrentHumidifierDehumidifierState.bind(this))
+    this._bind(
+      humidifierService
+        .getCharacteristic(Characteristic.CurrentHumidifierDehumidifierState)
+        .updateValue(this._getCurrentHumidifierDehumidifierState(dps)),
+      this.getCurrentHumidifierDehumidifierState.bind(this),
+    )
 
-    humidifierService
-      .getCharacteristic(Characteristic.TargetHumidifierDehumidifierState)
-      .setProps({
-        minValue: 1,
-        maxValue: 1,
-        validValues: [1],
-      })
-      .updateValue(this._getTargetHumidifierDehumidifierState())
-      .on('get', this.getTargetHumidifierDehumidifierState.bind(this))
-      .on('set', this.setTargetHumidifierDehumidifierState.bind(this))
+    this._bind(
+      humidifierService
+        .getCharacteristic(Characteristic.TargetHumidifierDehumidifierState)
+        .setProps({
+          minValue: 1,
+          maxValue: 1,
+          validValues: [1],
+        })
+        .updateValue(this._getTargetHumidifierDehumidifierState()),
+      this.getTargetHumidifierDehumidifierState.bind(this),
+      this.setTargetHumidifierDehumidifierState.bind(this),
+    )
 
-    const characteristicWaterLevel = humidifierService
-      .getCharacteristic(Characteristic.WaterLevel)
-      .updateValue(this._getWaterLevel(dps[this.dpWaterLevel]))
-      .on('get', this.getWaterLevel.bind(this))
+    const characteristicWaterLevel = this._bind(
+      humidifierService
+        .getCharacteristic(Characteristic.WaterLevel)
+        .updateValue(this._getWaterLevel(dps[this.dpWaterLevel])),
+      this.getWaterLevel.bind(this),
+    )
 
-    humidifierService
-      .getCharacteristic(Characteristic.CurrentRelativeHumidity)
-      .updateValue(this.dpActive ? 1 : 0)
-      .on('get', this.getRotationSpeed.bind(this))
+    this._bind(
+      humidifierService.getCharacteristic(Characteristic.CurrentRelativeHumidity).updateValue(this.dpActive ? 1 : 0),
+      this.getRotationSpeed.bind(this),
+    )
 
-    const characteristicRotationSpeed = humidifierService
-      .getCharacteristic(Characteristic.RotationSpeed)
-      .setProps({
-        minValue: 0,
-        maxValue: this.maxSpeed,
-        minStep: 1,
-      })
-      .updateValue(this._getRotationSpeed(dps))
-      .on('get', this.getRotationSpeed.bind(this))
-      .on('set', this.setRotationSpeed.bind(this))
+    const characteristicRotationSpeed = this._bind(
+      humidifierService
+        .getCharacteristic(Characteristic.RotationSpeed)
+        .setProps({
+          minValue: 0,
+          maxValue: this.maxSpeed,
+          minStep: 1,
+        })
+        .updateValue(this._getRotationSpeed(dps)),
+      this.getRotationSpeed.bind(this),
+      this.setRotationSpeed.bind(this),
+    )
 
     this.characteristicActive = characteristicActive
     this.characteristicRotationSpeed = characteristicRotationSpeed
 
     this.device.on('change', (changes: DPSState, _state: DPSState) => {
-      if (changes.hasOwnProperty(this.dpLight) && characteristicLightOn.value !== changes[this.dpLight])
-        characteristicLightOn.updateValue(changes[this.dpLight])
+      if (changes.hasOwnProperty(this.dpLight) && characteristicLightOn.value !== !!changes[this.dpLight])
+        characteristicLightOn.updateValue(!!changes[this.dpLight])
 
       if (changes.hasOwnProperty(this.dpActive)) {
         const newActive = this._getActive(changes[this.dpActive])
@@ -292,7 +308,7 @@ class OilDiffuserAccessory extends BaseAccessory {
   }
 
   getColorTemperature(callback: HomebridgeCallback): void {
-    if (this.device.state[this.dpMode] !== this.cmdWhite) return callback(null, 0)
+    if (this.device.state[this.dpMode] !== this.cmdWhite) return callback(null, 140)
     callback(null, this.convertColorTemperatureFromTuyaToHomeKit(this.device.state[(this as any).dpColorTemperature]))
   }
 

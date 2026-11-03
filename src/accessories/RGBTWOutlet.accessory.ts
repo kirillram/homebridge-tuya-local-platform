@@ -43,12 +43,12 @@ class RGBTWOutletAccessory extends BaseAccessory {
     const { Service } = this.hap
 
     const outletName = 'Outlet - ' + this.device.context.name
-    let outletService = this.accessory.getServiceByUUIDAndSubType(Service.Outlet, 'outlet')
+    let outletService = this.accessory.getServiceById(Service.Outlet, 'outlet')
     if (outletService) this._checkServiceName(outletService, outletName)
     else outletService = this.accessory.addService(Service.Outlet, outletName, 'outlet')
 
     const lightName = 'RGBTWLight - ' + this.device.context.name
-    let lightService = this.accessory.getServiceByUUIDAndSubType(Service.Lightbulb, 'lightbulb')
+    let lightService = this.accessory.getServiceById(Service.Lightbulb, 'lightbulb')
     if (lightService) this._checkServiceName(lightService, lightName)
     else lightService = this.accessory.addService(Service.Lightbulb, lightName, 'lightbulb')
 
@@ -66,8 +66,8 @@ class RGBTWOutletAccessory extends BaseAccessory {
 
     const { Service, Characteristic, EnergyCharacteristics } = this.hap
 
-    const outletService = this.accessory.getServiceByUUIDAndSubType(Service.Outlet, 'outlet')
-    const lightService = this.accessory.getServiceByUUIDAndSubType(Service.Lightbulb, 'lightbulb')
+    const outletService = this.accessory.getServiceById(Service.Outlet, 'outlet')
+    const lightService = this.accessory.getServiceById(Service.Lightbulb, 'lightbulb')
 
     this.dpLight = this._getCustomDP(this.device.context.dpLight) || '1'
     this.dpMode = this._getCustomDP(this.device.context.dpMode) || '2'
@@ -102,47 +102,55 @@ class RGBTWOutletAccessory extends BaseAccessory {
       wattsDivisor: parseInt(this.device.context.wattsDivisor) || 10,
     }
 
-    const characteristicLightOn = lightService
-      .getCharacteristic(Characteristic.On)
-      .updateValue(this._coerceBoolean(dps[this.dpLight], false))
-      .on('get', this.getPower.bind(this, this.dpLight))
-      .on('set', this.setPower.bind(this, this.dpLight))
+    const characteristicLightOn = this._bind(
+      lightService.getCharacteristic(Characteristic.On).updateValue(this._coerceBoolean(dps[this.dpLight], false)),
+      this.getPower.bind(this, this.dpLight),
+      this.setPower.bind(this, this.dpLight),
+    )
 
-    const characteristicBrightness = lightService
-      .getCharacteristic(Characteristic.Brightness)
-      .updateValue(
-        dps[this.dpMode] === this.cmdWhite
-          ? this.convertBrightnessFromTuyaToHomeKit(dps[this.dpBrightness])
-          : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).b,
-      )
-      .on('get', this.getBrightness.bind(this))
-      .on('set', this.setBrightness.bind(this))
+    const characteristicBrightness = this._bind(
+      lightService
+        .getCharacteristic(Characteristic.Brightness)
+        .updateValue(
+          dps[this.dpMode] === this.cmdWhite
+            ? this.convertBrightnessFromTuyaToHomeKit(dps[this.dpBrightness])
+            : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).b,
+        ),
+      this.getBrightness.bind(this),
+      this.setBrightness.bind(this),
+    )
 
-    const characteristicColorTemperature = lightService
-      .getCharacteristic(Characteristic.ColorTemperature)
-      .setProps({
-        minValue: 0,
-        maxValue: 600,
-      })
-      .updateValue(
-        dps[this.dpMode] === this.cmdWhite
-          ? this.convertColorTemperatureFromTuyaToHomeKit(dps[this.dpColorTemperature])
-          : 0,
-      )
-      .on('get', this.getColorTemperature.bind(this))
-      .on('set', this.setColorTemperature.bind(this))
+    const characteristicColorTemperature = this._bind(
+      lightService
+        .getCharacteristic(Characteristic.ColorTemperature)
+        .setProps({
+          minValue: 140,
+          maxValue: 500,
+        })
+        .updateValue(
+          dps[this.dpMode] === this.cmdWhite
+            ? this.convertColorTemperatureFromTuyaToHomeKit(dps[this.dpColorTemperature])
+            : 140,
+        ),
+      this.getColorTemperature.bind(this),
+      this.setColorTemperature.bind(this),
+    )
 
-    const characteristicHue = lightService
-      .getCharacteristic(Characteristic.Hue)
-      .updateValue(dps[this.dpMode] === this.cmdWhite ? 0 : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).h)
-      .on('get', this.getHue.bind(this))
-      .on('set', this.setHue.bind(this))
+    const characteristicHue = this._bind(
+      lightService
+        .getCharacteristic(Characteristic.Hue)
+        .updateValue(dps[this.dpMode] === this.cmdWhite ? 0 : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).h),
+      this.getHue.bind(this),
+      this.setHue.bind(this),
+    )
 
-    const characteristicSaturation = lightService
-      .getCharacteristic(Characteristic.Saturation)
-      .updateValue(dps[this.dpMode] === this.cmdWhite ? 0 : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).s)
-      .on('get', this.getSaturation.bind(this))
-      .on('set', this.setSaturation.bind(this))
+    const characteristicSaturation = this._bind(
+      lightService
+        .getCharacteristic(Characteristic.Saturation)
+        .updateValue(dps[this.dpMode] === this.cmdWhite ? 0 : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).s),
+      this.getSaturation.bind(this),
+      this.setSaturation.bind(this),
+    )
 
     this.characteristicHue = characteristicHue
     this.characteristicSaturation = characteristicSaturation
@@ -150,37 +158,43 @@ class RGBTWOutletAccessory extends BaseAccessory {
 
     let characteristicVolts: any
     if (energyKeys.volts) {
-      characteristicVolts = outletService
-        .getCharacteristic(EnergyCharacteristics.Volts)
-        .updateValue(this._getDividedState(dps[energyKeys.volts], energyKeys.voltsDivisor))
-        .on('get', this.getDividedState.bind(this, energyKeys.volts, energyKeys.voltsDivisor))
+      characteristicVolts = this._bind(
+        outletService
+          .getCharacteristic(EnergyCharacteristics.Volts)
+          .updateValue(this._getDividedState(dps[energyKeys.volts], energyKeys.voltsDivisor)),
+        this.getDividedState.bind(this, energyKeys.volts, energyKeys.voltsDivisor),
+      )
     } else this._removeCharacteristic(outletService, EnergyCharacteristics.Volts)
 
     let characteristicAmps: any
     if (energyKeys.amps) {
-      characteristicAmps = outletService
-        .getCharacteristic(EnergyCharacteristics.Amperes)
-        .updateValue(this._getDividedState(dps[energyKeys.amps], energyKeys.ampsDivisor))
-        .on('get', this.getDividedState.bind(this, energyKeys.amps, energyKeys.ampsDivisor))
+      characteristicAmps = this._bind(
+        outletService
+          .getCharacteristic(EnergyCharacteristics.Amperes)
+          .updateValue(this._getDividedState(dps[energyKeys.amps], energyKeys.ampsDivisor)),
+        this.getDividedState.bind(this, energyKeys.amps, energyKeys.ampsDivisor),
+      )
     } else this._removeCharacteristic(outletService, EnergyCharacteristics.Amperes)
 
     let characteristicWatts: any
     if (energyKeys.watts) {
-      characteristicWatts = outletService
-        .getCharacteristic(EnergyCharacteristics.Watts)
-        .updateValue(this._getDividedState(dps[energyKeys.watts], energyKeys.wattsDivisor))
-        .on('get', this.getDividedState.bind(this, energyKeys.watts, energyKeys.wattsDivisor))
+      characteristicWatts = this._bind(
+        outletService
+          .getCharacteristic(EnergyCharacteristics.Watts)
+          .updateValue(this._getDividedState(dps[energyKeys.watts], energyKeys.wattsDivisor)),
+        this.getDividedState.bind(this, energyKeys.watts, energyKeys.wattsDivisor),
+      )
     } else this._removeCharacteristic(outletService, EnergyCharacteristics.Watts)
 
-    const characteristicOutletOn = outletService
-      .getCharacteristic(Characteristic.On)
-      .updateValue(this._coerceBoolean(dps[this.dpPower], false))
-      .on('get', this.getPower.bind(this, this.dpPower))
-      .on('set', this.setPower.bind(this, this.dpPower))
+    const characteristicOutletOn = this._bind(
+      outletService.getCharacteristic(Characteristic.On).updateValue(this._coerceBoolean(dps[this.dpPower], false)),
+      this.getPower.bind(this, this.dpPower),
+      this.setPower.bind(this, this.dpPower),
+    )
 
     this.device.on('change', (changes: DPSState, state: DPSState) => {
-      if (changes.hasOwnProperty(this.dpLight) && characteristicLightOn.value !== changes[this.dpLight])
-        characteristicLightOn.updateValue(changes[this.dpLight])
+      if (changes.hasOwnProperty(this.dpLight) && characteristicLightOn.value !== !!changes[this.dpLight])
+        characteristicLightOn.updateValue(!!changes[this.dpLight])
 
       switch (state[this.dpMode]) {
         case this.cmdWhite:
@@ -223,15 +237,15 @@ class RGBTWOutletAccessory extends BaseAccessory {
 
             if (oldColor.b !== newColor.b) characteristicBrightness.updateValue(newColor.b)
             if (oldColor.h !== newColor.h) characteristicHue.updateValue(newColor.h)
-            if (oldColor.s !== newColor.s) characteristicSaturation.updateValue(newColor.h)
-            if (characteristicColorTemperature.value !== 0) characteristicColorTemperature.updateValue(0)
+            if (oldColor.s !== newColor.s) characteristicSaturation.updateValue(newColor.s)
+            if (characteristicColorTemperature.value !== 140) characteristicColorTemperature.updateValue(140)
           } else if (changes[this.dpMode]) {
-            if (characteristicColorTemperature.value !== 0) characteristicColorTemperature.updateValue(0)
+            if (characteristicColorTemperature.value !== 140) characteristicColorTemperature.updateValue(140)
           }
       }
 
-      if (changes.hasOwnProperty(this.dpPower) && characteristicOutletOn.value !== changes[this.dpPower])
-        characteristicOutletOn.updateValue(changes[this.dpPower])
+      if (changes.hasOwnProperty(this.dpPower) && characteristicOutletOn.value !== !!changes[this.dpPower])
+        characteristicOutletOn.updateValue(!!changes[this.dpPower])
 
       if (changes.hasOwnProperty(energyKeys.volts as string) && characteristicVolts) {
         const newVolts = this._getDividedState(changes[energyKeys.volts as string], energyKeys.voltsDivisor)
@@ -263,7 +277,7 @@ class RGBTWOutletAccessory extends BaseAccessory {
   }
 
   getColorTemperature(callback: HomebridgeCallback): void {
-    if (this.device.state[this.dpMode] !== this.cmdWhite) return callback(null, 0)
+    if (this.device.state[this.dpMode] !== this.cmdWhite) return callback(null, 140)
     callback(null, this.convertColorTemperatureFromTuyaToHomeKit(this.device.state[this.dpColorTemperature]))
   }
 
@@ -328,7 +342,7 @@ class RGBTWOutletAccessory extends BaseAccessory {
           next()
         },
         () => {
-          this.characteristicColorTemperature.updateValue(0)
+          this.characteristicColorTemperature.updateValue(140)
         },
       )
     }

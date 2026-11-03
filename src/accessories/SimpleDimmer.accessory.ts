@@ -28,17 +28,19 @@ class SimpleDimmerAccessory extends BaseAccessory {
     this.dpBrightness =
       this._getCustomDP(this.device.context.dpBrightness) || this._getCustomDP(this.device.context.dp) || '2'
 
-    const characteristicOn = service
-      .getCharacteristic(Characteristic.On)
-      .updateValue(this._coerceBoolean(dps[this.dpPower], false))
-      .on('get', this.getPower.bind(this, this.dpPower))
-      .on('set', this.setPower.bind(this, this.dpPower))
+    const characteristicOn = this._bind(
+      service.getCharacteristic(Characteristic.On).updateValue(this._coerceBoolean(dps[this.dpPower], false)),
+      this.getPower.bind(this, this.dpPower),
+      this.setPower.bind(this, this.dpPower),
+    )
 
-    const characteristicBrightness = service
-      .getCharacteristic(Characteristic.Brightness)
-      .updateValue(this.convertBrightnessFromTuyaToHomeKit(dps[this.dpBrightness]))
-      .on('get', this.getBrightness.bind(this))
-      .on('set', this.setBrightness.bind(this))
+    const characteristicBrightness = this._bind(
+      service
+        .getCharacteristic(Characteristic.Brightness)
+        .updateValue(this.convertBrightnessFromTuyaToHomeKit(dps[this.dpBrightness])),
+      this.getBrightness.bind(this),
+      this.setBrightness.bind(this),
+    )
 
     this.device.on('change', (changes: DPSState) => {
       if (changes.hasOwnProperty(this.dpPower) && characteristicOn.value !== !!changes[this.dpPower])

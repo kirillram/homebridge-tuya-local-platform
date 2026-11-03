@@ -34,7 +34,7 @@ class SwitchAccessory extends BaseAccessory {
     const switchCount = parseInt(this.device.context.switchCount) || 1
     const _validServices: any[] = []
     for (let i = 0; i++ < switchCount; ) {
-      let service = this.accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch ' + i)
+      let service = this.accessory.getServiceById(Service.Switch, 'switch ' + i)
       if (service) this._checkServiceName(service, this.device.context.name + ' ' + i)
       else service = this.accessory.addService(Service.Switch, this.device.context.name + ' ' + i, 'switch ' + i)
 
@@ -61,17 +61,17 @@ class SwitchAccessory extends BaseAccessory {
       let match: RegExpMatchArray | null
       if ((match = service.subtype.match(/^switch (\d+)$/)) === null) return
 
-      characteristics[match[1]] = service
-        .getCharacteristic(Characteristic.On)
-        .updateValue(this._coerceBoolean(dps[match[1]], false))
-        .on('get', this.getPower.bind(this, match[1]))
-        .on('set', this.setPower.bind(this, match[1]))
+      characteristics[match[1]] = this._bind(
+        service.getCharacteristic(Characteristic.On).updateValue(this._coerceBoolean(dps[match[1]], false)),
+        this.getPower.bind(this, match[1]),
+        this.setPower.bind(this, match[1]),
+      )
     })
 
     this.device.on('change', (changes: DPSState, _state: DPSState) => {
       Object.keys(changes).forEach((key) => {
-        if (characteristics[key] && characteristics[key].value !== changes[key])
-          characteristics[key].updateValue(changes[key])
+        if (characteristics[key] && characteristics[key].value !== this._coerceBoolean(changes[key], false))
+          characteristics[key].updateValue(this._coerceBoolean(changes[key], false))
       })
     })
   }

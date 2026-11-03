@@ -93,16 +93,18 @@ class AirConditionerAccessory extends BaseAccessory {
       `[AirConditioner] DP mapping - Active: ${this.dpActive}, CurrentTemp: ${this.dpCurrentTemperature}, Threshold: ${this.dpThreshold}, Mode: ${this.dpMode}, TempDivisor: ${this.temperatureDivisor}`,
     )
 
-    const characteristicActive = service
-      .getCharacteristic(Characteristic.Active)
-      .updateValue(this._getActive(dps[this.dpActive]))
-      .on('get', this.getActive.bind(this))
-      .on('set', this.setActive.bind(this))
+    const characteristicActive = this._bind(
+      service.getCharacteristic(Characteristic.Active).updateValue(this._getActive(dps[this.dpActive])),
+      this.getActive.bind(this),
+      this.setActive.bind(this),
+    )
 
-    const characteristicCurrentHeaterCoolerState = service
-      .getCharacteristic(Characteristic.CurrentHeaterCoolerState)
-      .updateValue(this._getCurrentHeaterCoolerState(dps))
-      .on('get', this.getCurrentHeaterCoolerState.bind(this))
+    const characteristicCurrentHeaterCoolerState = this._bind(
+      service
+        .getCharacteristic(Characteristic.CurrentHeaterCoolerState)
+        .updateValue(this._getCurrentHeaterCoolerState(dps)),
+      this.getCurrentHeaterCoolerState.bind(this),
+    )
 
     const _validTargetHeaterCoolerStateValues: number[] = [STATE_OTHER]
     if (!this.device.context.noCool)
@@ -112,20 +114,24 @@ class AirConditionerAccessory extends BaseAccessory {
     if (!this.device.context.noAuto)
       _validTargetHeaterCoolerStateValues.unshift(Characteristic.TargetHeaterCoolerState.AUTO)
 
-    const characteristicTargetHeaterCoolerState = service
-      .getCharacteristic(Characteristic.TargetHeaterCoolerState)
-      .setProps({
-        maxValue: 9,
-        validValues: _validTargetHeaterCoolerStateValues,
-      })
-      .updateValue(this._getTargetHeaterCoolerState(dps[this.dpMode]))
-      .on('get', this.getTargetHeaterCoolerState.bind(this))
-      .on('set', this.setTargetHeaterCoolerState.bind(this))
+    const characteristicTargetHeaterCoolerState = this._bind(
+      service
+        .getCharacteristic(Characteristic.TargetHeaterCoolerState)
+        .setProps({
+          maxValue: 9,
+          validValues: _validTargetHeaterCoolerStateValues,
+        })
+        .updateValue(this._getTargetHeaterCoolerState(dps[this.dpMode])),
+      this.getTargetHeaterCoolerState.bind(this),
+      this.setTargetHeaterCoolerState.bind(this),
+    )
 
-    const characteristicCurrentTemperature = service
-      .getCharacteristic(Characteristic.CurrentTemperature)
-      .updateValue(this._getDividedState(dps[this.dpCurrentTemperature], this.temperatureDivisor))
-      .on('get', this.getDividedState.bind(this, this.dpCurrentTemperature, this.temperatureDivisor))
+    const characteristicCurrentTemperature = this._bind(
+      service
+        .getCharacteristic(Characteristic.CurrentTemperature)
+        .updateValue(this._getDividedState(dps[this.dpCurrentTemperature], this.temperatureDivisor)),
+      this.getDividedState.bind(this, this.dpCurrentTemperature, this.temperatureDivisor),
+    )
 
     this.log.debug(
       `[AirConditioner] Initial current temperature from DP ${this.dpCurrentTemperature}: raw=${dps[this.dpCurrentTemperature]}, converted=${this._getDividedState(dps[this.dpCurrentTemperature], this.temperatureDivisor)}°C`,
@@ -133,63 +139,71 @@ class AirConditionerAccessory extends BaseAccessory {
 
     let characteristicSwingMode: any
     if (!this.device.context.noSwing) {
-      characteristicSwingMode = service
-        .getCharacteristic(Characteristic.SwingMode)
-        .updateValue(this._getSwingMode(dps[this.dpSwingMode]))
-        .on('get', this.getSwingMode.bind(this))
-        .on('set', this.setSwingMode.bind(this))
+      characteristicSwingMode = this._bind(
+        service.getCharacteristic(Characteristic.SwingMode).updateValue(this._getSwingMode(dps[this.dpSwingMode])),
+        this.getSwingMode.bind(this),
+        this.setSwingMode.bind(this),
+      )
     } else this._removeCharacteristic(service, Characteristic.SwingMode)
 
     let characteristicLockPhysicalControls: any
     if (!this.device.context.noChildLock) {
-      characteristicLockPhysicalControls = service
-        .getCharacteristic(Characteristic.LockPhysicalControls)
-        .updateValue(this._getLockPhysicalControls(dps[this.dpChildLock]))
-        .on('get', this.getLockPhysicalControls.bind(this))
-        .on('set', this.setLockPhysicalControls.bind(this))
+      characteristicLockPhysicalControls = this._bind(
+        service
+          .getCharacteristic(Characteristic.LockPhysicalControls)
+          .updateValue(this._getLockPhysicalControls(dps[this.dpChildLock])),
+        this.getLockPhysicalControls.bind(this),
+        this.setLockPhysicalControls.bind(this),
+      )
     } else this._removeCharacteristic(service, Characteristic.LockPhysicalControls)
 
     let characteristicCoolingThresholdTemperature: any
     if (!this.device.context.noCool) {
-      characteristicCoolingThresholdTemperature = service
-        .getCharacteristic(Characteristic.CoolingThresholdTemperature)
-        .setProps({
-          minValue: this.device.context.minTemperature || 10,
-          maxValue: this.device.context.maxTemperature || 35,
-          minStep: this.device.context.minTemperatureSteps || 1,
-        })
-        .updateValue(this.dpThreshold)
-        .on('get', this.getState.bind(this, this.dpThreshold))
-        .on('set', this.setTargetThresholdTemperature.bind(this, 'cool'))
+      characteristicCoolingThresholdTemperature = this._bind(
+        service
+          .getCharacteristic(Characteristic.CoolingThresholdTemperature)
+          .setProps({
+            minValue: this.device.context.minTemperature || 10,
+            maxValue: this.device.context.maxTemperature || 35,
+            minStep: this.device.context.minTemperatureSteps || 1,
+          })
+          .updateValue(this.dpThreshold),
+        this.getState.bind(this, this.dpThreshold),
+        this.setTargetThresholdTemperature.bind(this, 'cool'),
+      )
     } else this._removeCharacteristic(service, Characteristic.CoolingThresholdTemperature)
 
     let characteristicHeatingThresholdTemperature: any
     if (!this.device.context.noHeat) {
-      characteristicHeatingThresholdTemperature = service
-        .getCharacteristic(Characteristic.HeatingThresholdTemperature)
-        .setProps({
-          minValue: this.device.context.minTemperature || 10,
-          maxValue: this.device.context.maxTemperature || 35,
-          minStep: this.device.context.minTemperatureSteps || 1,
-        })
-        .updateValue(dps[this.dpThreshold])
-        .on('get', this.getState.bind(this, this.dpThreshold))
-        .on('set', this.setTargetThresholdTemperature.bind(this, 'heat'))
+      characteristicHeatingThresholdTemperature = this._bind(
+        service
+          .getCharacteristic(Characteristic.HeatingThresholdTemperature)
+          .setProps({
+            minValue: this.device.context.minTemperature || 10,
+            maxValue: this.device.context.maxTemperature || 35,
+            minStep: this.device.context.minTemperatureSteps || 1,
+          })
+          .updateValue(dps[this.dpThreshold]),
+        this.getState.bind(this, this.dpThreshold),
+        this.setTargetThresholdTemperature.bind(this, 'heat'),
+      )
     } else this._removeCharacteristic(service, Characteristic.HeatingThresholdTemperature)
 
-    const characteristicTemperatureDisplayUnits = service
-      .getCharacteristic(Characteristic.TemperatureDisplayUnits)
-      .updateValue(this._getTemperatureDisplayUnits(dps[this.dpTempUnits]))
-      .on('get', this.getTemperatureDisplayUnits.bind(this))
-      .on('set', this.setTemperatureDisplayUnits.bind(this))
+    const characteristicTemperatureDisplayUnits = this._bind(
+      service
+        .getCharacteristic(Characteristic.TemperatureDisplayUnits)
+        .updateValue(this._getTemperatureDisplayUnits(dps[this.dpTempUnits])),
+      this.getTemperatureDisplayUnits.bind(this),
+      this.setTemperatureDisplayUnits.bind(this),
+    )
 
     let characteristicRotationSpeed: any
     if (!this.device.context.noRotationSpeed) {
-      characteristicRotationSpeed = service
-        .getCharacteristic(Characteristic.RotationSpeed)
-        .updateValue(this._getRotationSpeed(dps))
-        .on('get', this.getRotationSpeed.bind(this))
-        .on('set', this.setRotationSpeed.bind(this))
+      characteristicRotationSpeed = this._bind(
+        service.getCharacteristic(Characteristic.RotationSpeed).updateValue(this._getRotationSpeed(dps)),
+        this.getRotationSpeed.bind(this),
+        this.setRotationSpeed.bind(this),
+      )
     } else this._removeCharacteristic(service, Characteristic.RotationSpeed)
 
     this.characteristicCoolingThresholdTemperature = characteristicCoolingThresholdTemperature

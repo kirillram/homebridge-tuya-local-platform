@@ -35,7 +35,7 @@ class MultiOutletAccessory extends BaseAccessory {
     const outletCount = parseInt(this.device.context.outletCount) || 1
     const _validServices: any[] = []
     for (let i = 0; i++ < outletCount; ) {
-      let service = this.accessory.getServiceByUUIDAndSubType(Service.Outlet, 'outlet ' + i)
+      let service = this.accessory.getServiceById(Service.Outlet, 'outlet ' + i)
       if (service) this._checkServiceName(service, this.device.context.name + ' ' + i)
       else service = this.accessory.addService(Service.Outlet, this.device.context.name + ' ' + i, 'outlet ' + i)
 
@@ -62,17 +62,17 @@ class MultiOutletAccessory extends BaseAccessory {
       let match: RegExpMatchArray | null
       if ((match = service.subtype.match(/^outlet (\d+)$/)) === null) return
 
-      characteristics[match[1]] = service
-        .getCharacteristic(Characteristic.On)
-        .updateValue(this._coerceBoolean(dps[match[1]], false))
-        .on('get', this.getPower.bind(this, match[1]))
-        .on('set', this.setPower.bind(this, match[1]))
+      characteristics[match[1]] = this._bind(
+        service.getCharacteristic(Characteristic.On).updateValue(this._coerceBoolean(dps[match[1]], false)),
+        this.getPower.bind(this, match[1]),
+        this.setPower.bind(this, match[1]),
+      )
     })
 
     this.device.on('change', (changes: DPSState, _state: DPSState) => {
       Object.keys(changes).forEach((key) => {
-        if (characteristics[key] && characteristics[key].value !== changes[key])
-          characteristics[key].updateValue(changes[key])
+        if (characteristics[key] && characteristics[key].value !== this._coerceBoolean(changes[key], false))
+          characteristics[key].updateValue(this._coerceBoolean(changes[key], false))
       })
     })
   }

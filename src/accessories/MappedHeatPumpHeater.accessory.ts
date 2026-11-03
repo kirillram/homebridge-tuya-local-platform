@@ -102,47 +102,55 @@ class MappedHeatPumpHeaterAccessory extends BaseAccessory {
     this.log.debug(`[MappedHeatPump] Mapping table: ${JSON.stringify(this.roomToWaterMap)}`)
     this.log.debug(`[MappedHeatPump] Initial virtual room target: ${this.virtualRoomTarget}°C`)
 
-    const characteristicActive = service
-      .getCharacteristic(Characteristic.Active)
-      .updateValue(this._getActive(dps[this.dpActive]))
-      .on('get', this.getActive.bind(this))
-      .on('set', this.setActive.bind(this))
+    const characteristicActive = this._bind(
+      service.getCharacteristic(Characteristic.Active).updateValue(this._getActive(dps[this.dpActive])),
+      this.getActive.bind(this),
+      this.setActive.bind(this),
+    )
 
-    service
-      .getCharacteristic(Characteristic.CurrentHeaterCoolerState)
-      .updateValue(this._getCurrentHeaterCoolerState(dps))
-      .on('get', this.getCurrentHeaterCoolerState.bind(this))
+    this._bind(
+      service
+        .getCharacteristic(Characteristic.CurrentHeaterCoolerState)
+        .updateValue(this._getCurrentHeaterCoolerState(dps)),
+      this.getCurrentHeaterCoolerState.bind(this),
+    )
 
-    service
-      .getCharacteristic(Characteristic.TargetHeaterCoolerState)
-      .setProps({
-        minValue: 1,
-        maxValue: 1,
-        validValues: [Characteristic.TargetHeaterCoolerState.HEAT],
-      })
-      .updateValue(this._getTargetHeaterCoolerState())
-      .on('get', this.getTargetHeaterCoolerState.bind(this))
-      .on('set', this.setTargetHeaterCoolerState.bind(this))
+    this._bind(
+      service
+        .getCharacteristic(Characteristic.TargetHeaterCoolerState)
+        .setProps({
+          minValue: 1,
+          maxValue: 1,
+          validValues: [Characteristic.TargetHeaterCoolerState.HEAT],
+        })
+        .updateValue(this._getTargetHeaterCoolerState()),
+      this.getTargetHeaterCoolerState.bind(this),
+      this.setTargetHeaterCoolerState.bind(this),
+    )
 
-    const characteristicCurrentTemperature = service
-      .getCharacteristic(Characteristic.CurrentTemperature)
-      .updateValue(this._getDividedState(dps[this.dpReturnTemperature], this.returnTemperatureDivisor))
-      .on('get', this.getDividedState.bind(this, this.dpReturnTemperature, this.returnTemperatureDivisor))
+    const characteristicCurrentTemperature = this._bind(
+      service
+        .getCharacteristic(Characteristic.CurrentTemperature)
+        .updateValue(this._getDividedState(dps[this.dpReturnTemperature], this.returnTemperatureDivisor)),
+      this.getDividedState.bind(this, this.dpReturnTemperature, this.returnTemperatureDivisor),
+    )
 
     this.log.debug(
       `[MappedHeatPump] Initial return temperature from DP ${this.dpReturnTemperature}: raw=${dps[this.dpReturnTemperature]}, converted=${this._getDividedState(dps[this.dpReturnTemperature], this.returnTemperatureDivisor)}°C`,
     )
 
-    const characteristicHeatingThresholdTemperature = service
-      .getCharacteristic(Characteristic.HeatingThresholdTemperature)
-      .setProps({
-        minValue: this.roomTargetMin,
-        maxValue: this.roomTargetMax,
-        minStep: this.device.context.minTemperatureSteps || 0.5,
-      })
-      .updateValue(this.virtualRoomTarget)
-      .on('get', this.getVirtualRoomTarget.bind(this))
-      .on('set', this.setVirtualRoomTarget.bind(this))
+    const characteristicHeatingThresholdTemperature = this._bind(
+      service
+        .getCharacteristic(Characteristic.HeatingThresholdTemperature)
+        .setProps({
+          minValue: this.roomTargetMin,
+          maxValue: this.roomTargetMax,
+          minStep: this.device.context.minTemperatureSteps || 0.5,
+        })
+        .updateValue(this.virtualRoomTarget),
+      this.getVirtualRoomTarget.bind(this),
+      this.setVirtualRoomTarget.bind(this),
+    )
 
     this.characteristicHeatingThresholdTemperature = characteristicHeatingThresholdTemperature
 
@@ -154,10 +162,12 @@ class MappedHeatPumpHeaterAccessory extends BaseAccessory {
       )
       if (services.length > 0) {
         const outsideService = services[0]
-        characteristicOutsideTemperature = outsideService
-          .getCharacteristic(Characteristic.CurrentTemperature)
-          .updateValue(this._getDividedState(dps[this.dpOutsideTemperature], this.outsideTemperatureDivisor))
-          .on('get', this.getDividedState.bind(this, this.dpOutsideTemperature, this.outsideTemperatureDivisor))
+        characteristicOutsideTemperature = this._bind(
+          outsideService
+            .getCharacteristic(Characteristic.CurrentTemperature)
+            .updateValue(this._getDividedState(dps[this.dpOutsideTemperature], this.outsideTemperatureDivisor)),
+          this.getDividedState.bind(this, this.dpOutsideTemperature, this.outsideTemperatureDivisor),
+        )
 
         this.log.debug(
           `[MappedHeatPump] Initial outside temperature from DP ${this.dpOutsideTemperature}: raw=${dps[this.dpOutsideTemperature]}, converted=${this._getDividedState(dps[this.dpOutsideTemperature], this.outsideTemperatureDivisor)}°C`,
@@ -173,10 +183,12 @@ class MappedHeatPumpHeaterAccessory extends BaseAccessory {
       )
       if (services.length > 0) {
         const flowService = services[0]
-        characteristicFlowTemperature = flowService
-          .getCharacteristic(Characteristic.CurrentTemperature)
-          .updateValue(this._getDividedState(dps[this.dpFlowTemperature], this.flowTemperatureDivisor))
-          .on('get', this.getDividedState.bind(this, this.dpFlowTemperature, this.flowTemperatureDivisor))
+        characteristicFlowTemperature = this._bind(
+          flowService
+            .getCharacteristic(Characteristic.CurrentTemperature)
+            .updateValue(this._getDividedState(dps[this.dpFlowTemperature], this.flowTemperatureDivisor)),
+          this.getDividedState.bind(this, this.dpFlowTemperature, this.flowTemperatureDivisor),
+        )
 
         this.log.debug(
           `[MappedHeatPump] Initial flow temperature from DP ${this.dpFlowTemperature}: raw=${dps[this.dpFlowTemperature]}, converted=${this._getDividedState(dps[this.dpFlowTemperature], this.flowTemperatureDivisor)}°C`,
@@ -192,10 +204,12 @@ class MappedHeatPumpHeaterAccessory extends BaseAccessory {
       )
       if (services.length > 0) {
         const returnService = services[0]
-        characteristicReturnSensor = returnService
-          .getCharacteristic(Characteristic.CurrentTemperature)
-          .updateValue(this._getDividedState(dps[this.dpReturnTemperature], this.returnTemperatureDivisor))
-          .on('get', this.getDividedState.bind(this, this.dpReturnTemperature, this.returnTemperatureDivisor))
+        characteristicReturnSensor = this._bind(
+          returnService
+            .getCharacteristic(Characteristic.CurrentTemperature)
+            .updateValue(this._getDividedState(dps[this.dpReturnTemperature], this.returnTemperatureDivisor)),
+          this.getDividedState.bind(this, this.dpReturnTemperature, this.returnTemperatureDivisor),
+        )
       }
     }
 

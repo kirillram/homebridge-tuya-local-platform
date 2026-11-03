@@ -48,43 +48,41 @@ class ValveAccessory extends BaseAccessory {
 
     this.dpPower = this._getCustomDP(this.device.context.dpPower) || '1'
 
-    const characteristicActive = service
-      .getCharacteristic(Characteristic.Active)
-      .updateValue(this._coerceBoolean(dps[this.dpPower], false))
-      .on('get', this.getPower.bind(this, this.dpPower))
-      .on('set', this.setPower.bind(this, this.dpPower))
+    const characteristicActive = this._bind(
+      service.getCharacteristic(Characteristic.Active).updateValue(this._coerceBoolean(dps[this.dpPower], false)),
+      this.getPower.bind(this, this.dpPower),
+      this.setPower.bind(this, this.dpPower),
+    )
 
-    const characteristicInUse = service
-      .getCharacteristic(Characteristic.InUse)
-      .on('get', (next: HomebridgeCallback) => {
+    const characteristicInUse = this._bind(
+      service.getCharacteristic(Characteristic.InUse),
+      (next: HomebridgeCallback) => {
         next(null, characteristicActive.value)
-      })
+      },
+    )
 
     if (!this.noTimer) {
-      service
-        .getCharacteristic(Characteristic.SetDuration)
-        .on('get', (next: HomebridgeCallback) => {
-          next(null, this.setDuration)
-        })
-        .on('change', (data: any) => {
-          this.log.info('Water Valve Time Duration Set to: ' + data.newValue / 60 + ' Minutes')
-          this.setDuration = data.newValue
+      this._bind(service.getCharacteristic(Characteristic.SetDuration), (next: HomebridgeCallback) => {
+        next(null, this.setDuration)
+      }).on('change', (data: any) => {
+        this.log.info('Water Valve Time Duration Set to: ' + data.newValue / 60 + ' Minutes')
+        this.setDuration = data.newValue
 
-          if (service.getCharacteristic(Characteristic.InUse).value) {
-            this.lastActivationTime = new Date().getTime()
-            service.getCharacteristic(Characteristic.RemainingDuration).updateValue(data.newValue)
+        if (service.getCharacteristic(Characteristic.InUse).value) {
+          this.lastActivationTime = new Date().getTime()
+          service.getCharacteristic(Characteristic.RemainingDuration).updateValue(data.newValue)
 
-            if (this.timer) clearTimeout(this.timer)
-            this.timer = setTimeout(() => {
-              this.log.info('Water Valve Timer Expired. Shutting OFF Valve')
-              service.getCharacteristic(Characteristic.Active).setValue(0)
-              service.getCharacteristic(Characteristic.InUse).updateValue(0)
-              this.lastActivationTime = null
-            }, data.newValue * 1000)
-          }
-        })
+          if (this.timer) clearTimeout(this.timer)
+          this.timer = setTimeout(() => {
+            this.log.info('Water Valve Timer Expired. Shutting OFF Valve')
+            service.getCharacteristic(Characteristic.Active).setValue(0)
+            service.getCharacteristic(Characteristic.InUse).updateValue(0)
+            this.lastActivationTime = null
+          }, data.newValue * 1000)
+        }
+      })
 
-      service.getCharacteristic(Characteristic.RemainingDuration).on('get', (next: HomebridgeCallback) => {
+      this._bind(service.getCharacteristic(Characteristic.RemainingDuration), (next: HomebridgeCallback) => {
         let remainingTime =
           this.setDuration - Math.floor((new Date().getTime() - (this.lastActivationTime || 0)) / 1000)
         if (!remainingTime || remainingTime < 0) remainingTime = 0
@@ -133,10 +131,9 @@ class ValveAccessory extends BaseAccessory {
     }
 
     this.device.on('change', (changes: DPSState) => {
-      if (changes.hasOwnProperty(this.dpPower) && characteristicActive.value !== changes[this.dpPower])
-        characteristicActive.updateValue(changes[this.dpPower])
-      if (changes.hasOwnProperty(this.dpPower) && characteristicInUse.value !== changes[this.dpPower])
-        characteristicInUse.setValue(changes[this.dpPower])
+      const active = changes.hasOwnProperty(this.dpPower) ? (this._coerceBoolean(changes[this.dpPower]) ? 1 : 0) : null
+      if (active !== null && characteristicActive.value !== active) characteristicActive.updateValue(active)
+      if (active !== null && characteristicInUse.value !== active) characteristicInUse.setValue(active)
 
       if (!this.noTimer) {
         if (changes.hasOwnProperty(this.dpPower) && !changes[this.dpPower]) {

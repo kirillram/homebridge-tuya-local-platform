@@ -150,7 +150,7 @@ export function createMockPlatformAccessory(contextOverrides: any = {}) {
       const uuid = typeof type === 'object' ? type.UUID : type
       return services.get(uuid)
     }),
-    getServiceByUUIDAndSubType: vi.fn((type: any, subtype: string) => {
+    getServiceById: vi.fn((type: any, subtype: string) => {
       const uuid = typeof type === 'object' ? type.UUID : type
       const key = `${uuid}:${subtype}`
       return servicesBySubtype.get(key)
@@ -254,6 +254,14 @@ function createMockCharacteristicInstance(name: string) {
     }),
     on: vi.fn(function (this: any, event: string, listener: (...args: any[]) => void) {
       emitter.on(event, listener)
+      return this
+    }),
+    onGet: vi.fn(function (this: any, handler: () => unknown) {
+      this._onGet = handler
+      return this
+    }),
+    onSet: vi.fn(function (this: any, handler: (value: unknown) => unknown) {
+      this._onSet = handler
       return this
     }),
     emit: vi.fn(function (this: any, event: string, ...args: any[]) {

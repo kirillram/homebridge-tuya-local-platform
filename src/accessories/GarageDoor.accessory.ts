@@ -67,16 +67,12 @@ class GarageDoorAccessory extends BaseAccessory {
     const service = this.accessory.getService(Service.GarageDoorOpener)
     this._checkServiceName(service, this.device.context.name)
 
-    if (this.device.context.manufacturer.trim().toLowerCase() === GARAGE_DOOR_MANUFACTURER_KOGAN.trim().toLowerCase()) {
+    // manufacturer is optional in config
+    const manufacturer = (this.device.context.manufacturer || '').trim()
+    if (manufacturer.toLowerCase() === GARAGE_DOOR_MANUFACTURER_KOGAN.trim().toLowerCase()) {
       this.manufacturer = GARAGE_DOOR_MANUFACTURER_KOGAN.trim()
-    } else if (
-      this.device.context.manufacturer.trim().toLowerCase() === GARAGE_DOOR_MANUFACTURER_WOFEA.trim().toLowerCase()
-    ) {
-      this.manufacturer = this.device.context.manufacturer.trim()
-    } else if (this.device.context.manufacturer) {
-      this.manufacturer = this.device.context.manufacturer.trim()
     } else {
-      this.manufacturer = ''
+      this.manufacturer = manufacturer
     }
 
     if (this._isKogan()) {
@@ -113,16 +109,20 @@ class GarageDoorAccessory extends BaseAccessory {
       this.targetClosed = Characteristic.TargetDoorState.OPEN
     }
 
-    const characteristicTargetDoorState = service
-      .getCharacteristic(Characteristic.TargetDoorState)
-      .updateValue(this._getTargetDoorState(dps[this.dpStatus]))
-      .on('get', this.getTargetDoorState.bind(this))
-      .on('set', this.setTargetDoorState.bind(this))
+    const characteristicTargetDoorState = this._bind(
+      service
+        .getCharacteristic(Characteristic.TargetDoorState)
+        .updateValue(this._getTargetDoorState(dps[this.dpStatus])),
+      this.getTargetDoorState.bind(this),
+      this.setTargetDoorState.bind(this),
+    )
 
-    const characteristicCurrentDoorState = service
-      .getCharacteristic(Characteristic.CurrentDoorState)
-      .updateValue(this._getCurrentDoorState(dps[this.dpStatus]))
-      .on('get', this.getCurrentDoorState.bind(this))
+    const characteristicCurrentDoorState = this._bind(
+      service
+        .getCharacteristic(Characteristic.CurrentDoorState)
+        .updateValue(this._getCurrentDoorState(dps[this.dpStatus])),
+      this.getCurrentDoorState.bind(this),
+    )
 
     this.device.on('change', (changes: DPSState) => {
       this._alwaysLog('changed:' + JSON.stringify(changes))

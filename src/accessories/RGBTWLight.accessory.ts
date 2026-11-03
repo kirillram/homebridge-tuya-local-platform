@@ -64,47 +64,55 @@ class RGBTWLightAccessory extends BaseAccessory {
       else throw new Error(`The cmdColour doesn't appear to be valid: ${this.device.context.cmdColour}`)
     }
 
-    const characteristicOn = service
-      .getCharacteristic(Characteristic.On)
-      .updateValue(!!dps[this.dpPower])
-      .on('get', this.getPower.bind(this, this.dpPower))
-      .on('set', this.setPower.bind(this, this.dpPower))
+    const characteristicOn = this._bind(
+      service.getCharacteristic(Characteristic.On).updateValue(!!dps[this.dpPower]),
+      this.getPower.bind(this, this.dpPower),
+      this.setPower.bind(this, this.dpPower),
+    )
 
-    const characteristicBrightness = service
-      .getCharacteristic(Characteristic.Brightness)
-      .updateValue(
-        dps[this.dpMode] === this.cmdWhite
-          ? this.convertBrightnessFromTuyaToHomeKit(dps[this.dpBrightness])
-          : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).b,
-      )
-      .on('get', this.getBrightness.bind(this))
-      .on('set', this.setBrightness.bind(this))
+    const characteristicBrightness = this._bind(
+      service
+        .getCharacteristic(Characteristic.Brightness)
+        .updateValue(
+          dps[this.dpMode] === this.cmdWhite
+            ? this.convertBrightnessFromTuyaToHomeKit(dps[this.dpBrightness])
+            : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).b,
+        ),
+      this.getBrightness.bind(this),
+      this.setBrightness.bind(this),
+    )
 
-    const characteristicColorTemperature = service
-      .getCharacteristic(Characteristic.ColorTemperature)
-      .setProps({
-        minValue: 0,
-        maxValue: 600,
-      })
-      .updateValue(
-        dps[this.dpMode] === this.cmdWhite
-          ? this.convertColorTemperatureFromTuyaToHomeKit(dps[this.dpColorTemperature])
-          : 0,
-      )
-      .on('get', this.getColorTemperature.bind(this))
-      .on('set', this.setColorTemperature.bind(this))
+    const characteristicColorTemperature = this._bind(
+      service
+        .getCharacteristic(Characteristic.ColorTemperature)
+        .setProps({
+          minValue: 140,
+          maxValue: 500,
+        })
+        .updateValue(
+          dps[this.dpMode] === this.cmdWhite
+            ? this.convertColorTemperatureFromTuyaToHomeKit(dps[this.dpColorTemperature])
+            : 140,
+        ),
+      this.getColorTemperature.bind(this),
+      this.setColorTemperature.bind(this),
+    )
 
-    const characteristicHue = service
-      .getCharacteristic(Characteristic.Hue)
-      .updateValue(dps[this.dpMode] === this.cmdWhite ? 0 : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).h)
-      .on('get', this.getHue.bind(this))
-      .on('set', this.setHue.bind(this))
+    const characteristicHue = this._bind(
+      service
+        .getCharacteristic(Characteristic.Hue)
+        .updateValue(dps[this.dpMode] === this.cmdWhite ? 0 : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).h),
+      this.getHue.bind(this),
+      this.setHue.bind(this),
+    )
 
-    const characteristicSaturation = service
-      .getCharacteristic(Characteristic.Saturation)
-      .updateValue(dps[this.dpMode] === this.cmdWhite ? 0 : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).s)
-      .on('get', this.getSaturation.bind(this))
-      .on('set', this.setSaturation.bind(this))
+    const characteristicSaturation = this._bind(
+      service
+        .getCharacteristic(Characteristic.Saturation)
+        .updateValue(dps[this.dpMode] === this.cmdWhite ? 0 : this.convertColorFromTuyaToHomeKit(dps[this.dpColor]).s),
+      this.getSaturation.bind(this),
+      this.setSaturation.bind(this),
+    )
 
     this.characteristicHue = characteristicHue
     this.characteristicSaturation = characteristicSaturation
@@ -169,9 +177,9 @@ class RGBTWLightAccessory extends BaseAccessory {
               if (oldColor.b !== newColor.b) characteristicBrightness.updateValue(newColor.b)
               if (oldColor.h !== newColor.h) characteristicHue.updateValue(newColor.h)
               if (oldColor.s !== newColor.s) characteristicSaturation.updateValue(newColor.s)
-              if (characteristicColorTemperature.value !== 0) characteristicColorTemperature.updateValue(0)
+              if (characteristicColorTemperature.value !== 140) characteristicColorTemperature.updateValue(140)
             } else if (changes[this.dpMode]) {
-              if (characteristicColorTemperature.value !== 0) characteristicColorTemperature.updateValue(0)
+              if (characteristicColorTemperature.value !== 140) characteristicColorTemperature.updateValue(140)
             }
         }
       } catch (err) {
@@ -185,8 +193,8 @@ class RGBTWLightAccessory extends BaseAccessory {
       if (this.device.state[this.dpMode] === this.cmdWhite)
         return callback(null, this.convertBrightnessFromTuyaToHomeKit(this.device.state[this.dpBrightness]))
       callback(null, this.convertColorFromTuyaToHomeKit(this.device.state[this.dpColor] as string).b)
-    } catch (err) {
-      callback(err as Error)
+    } catch {
+      callback(null, 0)
     }
   }
 
@@ -195,13 +203,13 @@ class RGBTWLightAccessory extends BaseAccessory {
       if (this.device.state[this.dpMode] === this.cmdWhite)
         return this.setState(this.dpBrightness, this.convertBrightnessFromHomeKitToTuya(value), callback)
       this.setState(this.dpColor, this.convertColorFromHomeKitToTuya({ b: value as number }), callback)
-    } catch (err) {
-      callback(err as Error)
+    } catch {
+      callback(null)
     }
   }
 
   getColorTemperature(callback: HomebridgeCallback): void {
-    if (this.device.state[this.dpMode] !== this.cmdWhite) return callback(null, 0)
+    if (this.device.state[this.dpMode] !== this.cmdWhite) return callback(null, 140)
     callback(null, this.convertColorTemperatureFromTuyaToHomeKit(this.device.state[this.dpColorTemperature]))
   }
 
@@ -267,7 +275,7 @@ class RGBTWLightAccessory extends BaseAccessory {
           next()
         },
         () => {
-          this.characteristicColorTemperature.updateValue(0)
+          this.characteristicColorTemperature.updateValue(140)
         },
       )
     }

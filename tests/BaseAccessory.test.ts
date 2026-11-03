@@ -217,14 +217,14 @@ describe('BaseAccessory', () => {
       ;({ base } = createBaseAccessory())
     })
 
-    it('should stay within HomeKit bounds (71-600)', () => {
+    it('should stay within HomeKit ColorTemperature bounds (140-500)', () => {
       const hk = base.convertColorTemperatureFromTuyaToHomeKit(0)
-      expect(hk).toBeGreaterThanOrEqual(71)
-      expect(hk).toBeLessThanOrEqual(600)
+      expect(hk).toBeGreaterThanOrEqual(140)
+      expect(hk).toBeLessThanOrEqual(500)
 
       const hk2 = base.convertColorTemperatureFromTuyaToHomeKit(255)
-      expect(hk2).toBeGreaterThanOrEqual(71)
-      expect(hk2).toBeLessThanOrEqual(600)
+      expect(hk2).toBeGreaterThanOrEqual(140)
+      expect(hk2).toBeLessThanOrEqual(500)
     })
 
     it('should stay within Tuya bounds (0-scale)', () => {
@@ -321,14 +321,24 @@ describe('BaseAccessory', () => {
       expect(result.err).toBeNull()
     })
 
-    it('logs when a set cannot reach the device but still completes the HomeKit callback', async () => {
+    it('reports an error to the HomeKit callback when the device is not connected', async () => {
       const { base, device, log } = createBaseAccessory()
       device.connected = false
       const result = await new Promise<{ err: any }>((resolve) => {
         base.setState('1', true, (err) => resolve({ err }))
       })
-      expect(result.err).toBeNull()
+      expect(result.err).toBeInstanceOf(Error)
+      expect(device.update).not.toHaveBeenCalled()
       expect(log.warn).toHaveBeenCalled()
+    })
+
+    it('reports an error when the device rejects the write', async () => {
+      device.update.mockReturnValueOnce(false)
+      device.state['1'] = false
+      const result = await new Promise<{ err: any }>((resolve) => {
+        base.setState('1', true, (err) => resolve({ err }))
+      })
+      expect(result.err).toBeInstanceOf(Error)
     })
 
     it('getPower never errors to HAP, even when disconnected or DPS are missing', async () => {
@@ -348,6 +358,84 @@ describe('BaseAccessory', () => {
       })
       // HAP Characteristic.On throws if the get callback is (null, undefined)
       expect(result.err || result.val !== undefined).toBeTruthy()
+    })
+
+    it('completes a Homebridge 2 onSet that is invoked without a callback', async () => {
+      const { base } = createBaseAccessory()
+      const char: any = {
+        value: false,
+        on: vi.fn().mockReturnThis(),
+        onGet: vi.fn().mockReturnThis(),
+        onSet: vi.fn().mockReturnThis(),
+      }
+      base._bind(
+        char,
+        (cb) => cb(null, false),
+        (_value, cb) => cb(null),
+      )
+      const onSet = char.onSet.mock.calls[0][0]
+      await expect(onSet(true)).resolves.toBeUndefined()
+    })
+
+    it('registers only onGet/onSet when HAP supports them (no duplicate legacy listeners)', () => {
+      const { base } = createBaseAccessory()
+      const char: any = { value: false, on: vi.fn(), onGet: vi.fn(), onSet: vi.fn() }
+      base._bind(
+        char,
+        (cb) => cb(null, false),
+        (_value, cb) => cb(null),
+      )
+      expect(char.onGet).toHaveBeenCalledTimes(1)
+      expect(char.onSet).toHaveBeenCalledTimes(1)
+      expect(char.on).not.toHaveBeenCalled()
+    })
+
+    it('rejects onSet with SERVICE_COMMUNICATION_FAILURE when the write fails', async () => {
+      const { base } = createBaseAccessory()
+      const char: any = { value: false, on: vi.fn(), onGet: vi.fn(), onSet: vi.fn() }
+      base._bind(char, undefined, (_value, cb) => cb(new Error('Not connected')))
+      const onSet = char.onSet.mock.calls[0][0]
+      await expect(onSet(true)).rejects.toBe(-70402)
+    })
+
+    it('uses HapStatusError when HAP provides it', async () => {
+      const { base } = createBaseAccessory()
+      class HapStatusError extends Error {
+        constructor(public hapStatus: number) {
+          super('hap status')
+        }
+      }
+      ;(base.hap as any).HapStatusError = HapStatusError
+      ;(base.hap as any).HAPStatus = { SERVICE_COMMUNICATION_FAILURE: -70402 }
+      const char: any = { value: false, on: vi.fn(), onGet: vi.fn(), onSet: vi.fn() }
+      base._bind(char, undefined, (_value, cb) => cb(new Error('Update failed')))
+      const onSet = char.onSet.mock.calls[0][0]
+      await expect(onSet(true)).rejects.toMatchObject({ hapStatus: -70402 })
+    })
+
+    it('falls back to on(get/set) for older HAP and passes write errors to the callback', async () => {
+      const { base } = createBaseAccessory()
+      const listeners: Record<string, (...args: any[]) => void> = {}
+      const char: any = {
+        value: true,
+        on: vi.fn((event: string, fn: (...args: any[]) => void) => {
+          listeners[event] = fn
+          return char
+        }),
+      }
+      base._bind(
+        char,
+        (cb) => cb(null, undefined),
+        (_value, cb) => cb(new Error('Not connected')),
+      )
+      const got = await new Promise<{ err: any; val: any }>((resolve) =>
+        listeners.get((err: any, val: any) => resolve({ err, val })),
+      )
+      // Missing value falls back to the characteristic's last known value
+      expect(got).toEqual({ err: null, val: true })
+
+      const set = await new Promise<any>((resolve) => listeners.set(false, (err: any) => resolve(err)))
+      expect(set).toBeInstanceOf(Error)
     })
 
     it('does not throw when identify is fired without a callback (Homebridge 2)', () => {

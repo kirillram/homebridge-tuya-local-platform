@@ -114,13 +114,13 @@ class CircuitBreakerMonitorAccessory extends BaseAccessory {
     if (this.temperatureSensor) {
       this._checkServiceName(this.temperatureSensor, this.device.context.name)
 
-      const tempChar = this.temperatureSensor
-        .getCharacteristic(Characteristic.CurrentTemperature)
-        .setProps({
+      const tempChar = this._bind(
+        this.temperatureSensor.getCharacteristic(Characteristic.CurrentTemperature).setProps({
           minValue: -100,
           maxValue: 150,
-        })
-        .on('get', this.getTemperature.bind(this))
+        }),
+        this.getTemperature.bind(this),
+      )
 
       // Only set initial value if the DP is already present in state.
       // If absent (device hasn't pushed it yet), leave the characteristic
@@ -132,10 +132,10 @@ class CircuitBreakerMonitorAccessory extends BaseAccessory {
       // Add total energy consumption characteristic
       if (this.device.context.exposeEnergyCharacteristic !== false) {
         const energyValue = this._getEnergy(dps)
-        this.characteristicEnergy = this.temperatureSensor
-          .getCharacteristic(EnergyCharacteristics.KilowattHours)
-          .updateValue(energyValue)
-          .on('get', this.getEnergy.bind(this))
+        this.characteristicEnergy = this._bind(
+          this.temperatureSensor.getCharacteristic(EnergyCharacteristics.KilowattHours).updateValue(energyValue),
+          this.getEnergy.bind(this),
+        )
       }
     }
 
@@ -146,10 +146,10 @@ class CircuitBreakerMonitorAccessory extends BaseAccessory {
         this.device.context.leakSensorName || this.device.context.name + ' Leakage',
       )
 
-      this.leakSensor
-        .getCharacteristic(Characteristic.LeakDetected)
-        .updateValue(this._getLeakDetected(dps))
-        .on('get', this.getLeakDetected.bind(this))
+      this._bind(
+        this.leakSensor.getCharacteristic(Characteristic.LeakDetected).updateValue(this._getLeakDetected(dps)),
+        this.getLeakDetected.bind(this),
+      )
     }
 
     // Register Fault Sensor
@@ -159,10 +159,10 @@ class CircuitBreakerMonitorAccessory extends BaseAccessory {
         this.device.context.faultSensorName || this.device.context.name + ' Fault',
       )
 
-      this.faultSensor
-        .getCharacteristic(Characteristic.ContactSensorState)
-        .updateValue(this._getFaultState(dps))
-        .on('get', this.getFaultState.bind(this))
+      this._bind(
+        this.faultSensor.getCharacteristic(Characteristic.ContactSensorState).updateValue(this._getFaultState(dps)),
+        this.getFaultState.bind(this),
+      )
     }
 
     // Listen for device updates
@@ -178,9 +178,7 @@ class CircuitBreakerMonitorAccessory extends BaseAccessory {
   // Temperature Sensor
 
   getTemperature(callback: HomebridgeCallback): void {
-    this.getState(this.dpTemperature, (err: Error | null, dp: DPSValue) => {
-      if (err) return callback(err)
-      if (dp === undefined || dp === null) return callback(new Error('Temperature not yet available'))
+    this.getState(this.dpTemperature, (_err: Error | null, dp: DPSValue) => {
       callback(null, this._getTemperature({ [this.dpTemperature]: dp }))
     })
   }

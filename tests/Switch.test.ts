@@ -61,7 +61,7 @@ describe('SwitchAccessory', () => {
 
       switchAcc._registerPlatformAccessory()
 
-      const service = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 1')
+      const service = accessory.getServiceById(Service.Switch, 'switch 1')
       expect(service).toBeDefined()
       expect(service!.displayName).toContain('1')
     })
@@ -72,7 +72,7 @@ describe('SwitchAccessory', () => {
       switchAcc._registerPlatformAccessory()
       switchAcc._registerCharacteristics({ '1': true })
 
-      const service = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 1')
+      const service = accessory.getServiceById(Service.Switch, 'switch 1')
       const char = service!.getCharacteristic(Characteristic.On)
 
       expect(char.value).toBe(true)
@@ -84,7 +84,7 @@ describe('SwitchAccessory', () => {
       switchAcc._registerPlatformAccessory()
       switchAcc._registerCharacteristics({ '1': false })
 
-      const service = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 1')
+      const service = accessory.getServiceById(Service.Switch, 'switch 1')
       const char = service!.getCharacteristic(Characteristic.On)
       const updateSpy = vi.spyOn(char, 'updateValue')
 
@@ -101,9 +101,9 @@ describe('SwitchAccessory', () => {
 
       switchAcc._registerPlatformAccessory()
 
-      const service1 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 1')
-      const service2 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 2')
-      const service3 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 3')
+      const service1 = accessory.getServiceById(Service.Switch, 'switch 1')
+      const service2 = accessory.getServiceById(Service.Switch, 'switch 2')
+      const service3 = accessory.getServiceById(Service.Switch, 'switch 3')
 
       expect(service1).toBeDefined()
       expect(service2).toBeDefined()
@@ -116,9 +116,9 @@ describe('SwitchAccessory', () => {
       switchAcc._registerPlatformAccessory()
       switchAcc._registerCharacteristics({ '1': true, '2': false, '3': true })
 
-      const service1 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 1')
-      const service2 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 2')
-      const service3 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 3')
+      const service1 = accessory.getServiceById(Service.Switch, 'switch 1')
+      const service2 = accessory.getServiceById(Service.Switch, 'switch 2')
+      const service3 = accessory.getServiceById(Service.Switch, 'switch 3')
 
       expect(service1!.getCharacteristic(Characteristic.On).value).toBe(true)
       expect(service2!.getCharacteristic(Characteristic.On).value).toBe(false)
@@ -131,9 +131,9 @@ describe('SwitchAccessory', () => {
       switchAcc._registerPlatformAccessory()
       switchAcc._registerCharacteristics({ '1': false, '2': false, '3': false })
 
-      const service1 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 1')
-      const service2 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 2')
-      const service3 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 3')
+      const service1 = accessory.getServiceById(Service.Switch, 'switch 1')
+      const service2 = accessory.getServiceById(Service.Switch, 'switch 2')
+      const service3 = accessory.getServiceById(Service.Switch, 'switch 3')
 
       // Emit change for only switch 2
       device.state = { '1': false, '2': true, '3': false }
@@ -147,7 +147,20 @@ describe('SwitchAccessory', () => {
   })
 
   describe('batched power changes', () => {
-    it('batches multiple rapid set requests together', () => {
+    // Characteristics are bound via onSet (Homebridge 2 style); track when each write settles
+    const track = (promise: Promise<unknown>) => {
+      const state = { done: false, err: undefined as unknown }
+      promise.then(
+        () => (state.done = true),
+        (err) => {
+          state.done = true
+          state.err = err
+        },
+      )
+      return state
+    }
+
+    it('batches multiple rapid set requests together', async () => {
       const { switchAcc, device, accessory, Service, Characteristic } = createSwitch({ switchCount: '2' })
 
       // Device must be connected for setMultiState to work
@@ -156,34 +169,32 @@ describe('SwitchAccessory', () => {
       switchAcc._registerPlatformAccessory()
       switchAcc._registerCharacteristics({ '1': false, '2': false })
 
-      const service1 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 1')
-      const service2 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 2')
+      const service1 = accessory.getServiceById(Service.Switch, 'switch 1')
+      const service2 = accessory.getServiceById(Service.Switch, 'switch 2')
 
       const char1 = service1!.getCharacteristic(Characteristic.On)
       const char2 = service2!.getCharacteristic(Characteristic.On)
 
-      const callback1 = vi.fn()
-      const callback2 = vi.fn()
-
       // Rapid set requests
-      char1.emit('set', true, callback1)
-      char2.emit('set', true, callback2)
+      const set1 = track(char1._onSet(true))
+      const set2 = track(char2._onSet(true))
 
-      // Callbacks not called immediately
-      expect(callback1).not.toHaveBeenCalled()
-      expect(callback2).not.toHaveBeenCalled()
+      // Not completed immediately
+      await vi.advanceTimersByTimeAsync(0)
+      expect(set1.done).toBe(false)
+      expect(set2.done).toBe(false)
 
       // After 500ms batch delay
-      vi.advanceTimersByTime(500)
+      await vi.advanceTimersByTimeAsync(500)
 
-      expect(callback1).toHaveBeenCalledWith(null)
-      expect(callback2).toHaveBeenCalledWith(null)
+      expect(set1).toEqual({ done: true, err: undefined })
+      expect(set2).toEqual({ done: true, err: undefined })
       // Device update is called for each switch that changed
       expect(device.update).toHaveBeenCalledWith({ '1': true })
       expect(device.update).toHaveBeenCalledWith({ '2': true })
     })
 
-    it('resets timer when new request arrives during batching period', () => {
+    it('resets timer when new request arrives during batching period', async () => {
       const { switchAcc, device, accessory, Service, Characteristic } = createSwitch({ switchCount: '2' })
 
       // Device must be connected for setMultiState to work
@@ -192,32 +203,45 @@ describe('SwitchAccessory', () => {
       switchAcc._registerPlatformAccessory()
       switchAcc._registerCharacteristics({ '1': false, '2': false })
 
-      const service1 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 1')
-      const service2 = accessory.getServiceByUUIDAndSubType(Service.Switch, 'switch 2')
+      const service1 = accessory.getServiceById(Service.Switch, 'switch 1')
+      const service2 = accessory.getServiceById(Service.Switch, 'switch 2')
 
       const char1 = service1!.getCharacteristic(Characteristic.On)
       const char2 = service2!.getCharacteristic(Characteristic.On)
 
-      const callback1 = vi.fn()
-      const callback2 = vi.fn()
-
       // First set
-      char1.emit('set', true, callback1)
-      vi.advanceTimersByTime(300)
+      const set1 = track(char1._onSet(true))
+      await vi.advanceTimersByTimeAsync(300)
 
       // Second set resets timer
-      char2.emit('set', true, callback2)
-      vi.advanceTimersByTime(300)
+      const set2 = track(char2._onSet(true))
+      await vi.advanceTimersByTimeAsync(300)
 
-      // Not called yet (reset)
-      expect(callback1).not.toHaveBeenCalled()
-      expect(callback2).not.toHaveBeenCalled()
+      // Not completed yet (reset)
+      expect(set1.done).toBe(false)
+      expect(set2.done).toBe(false)
 
       // Another 200ms (500ms total from second set)
-      vi.advanceTimersByTime(200)
+      await vi.advanceTimersByTimeAsync(200)
 
-      expect(callback1).toHaveBeenCalledWith(null)
-      expect(callback2).toHaveBeenCalledWith(null)
+      expect(set1).toEqual({ done: true, err: undefined })
+      expect(set2).toEqual({ done: true, err: undefined })
+    })
+
+    it('reports a HomeKit communication failure when the device is offline', async () => {
+      const { switchAcc, device, accessory, Service, Characteristic } = createSwitch({ switchCount: '1' })
+      device.connected = false
+
+      switchAcc._registerPlatformAccessory()
+      switchAcc._registerCharacteristics({ '1': false })
+
+      const char = accessory.getServiceById(Service.Switch, 'switch 1')!.getCharacteristic(Characteristic.On)
+      const set = track(char._onSet(true))
+      await vi.advanceTimersByTimeAsync(500)
+
+      expect(set.done).toBe(true)
+      expect(set.err).toBe(-70402) // HAPStatus.SERVICE_COMMUNICATION_FAILURE
+      expect(device.update).not.toHaveBeenCalled()
     })
   })
 })

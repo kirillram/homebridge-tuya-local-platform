@@ -56,32 +56,38 @@ class SimpleHeaterAccessory extends BaseAccessory {
       `[SimpleHeater] Divisors - Temperature: ${this.temperatureDivisor}, Threshold: ${this.thresholdTemperatureDivisor}, Target: ${this.targetTemperatureDivisor}, Ambient: ${this.ambientTemperatureDivisor}`,
     )
 
-    const characteristicActive = service
-      .getCharacteristic(Characteristic.Active)
-      .updateValue(this._getActive(dps[this.dpActive]))
-      .on('get', this.getActive.bind(this))
-      .on('set', this.setActive.bind(this))
+    const characteristicActive = this._bind(
+      service.getCharacteristic(Characteristic.Active).updateValue(this._getActive(dps[this.dpActive])),
+      this.getActive.bind(this),
+      this.setActive.bind(this),
+    )
 
-    service
-      .getCharacteristic(Characteristic.CurrentHeaterCoolerState)
-      .updateValue(this._getCurrentHeaterCoolerState(dps))
-      .on('get', this.getCurrentHeaterCoolerState.bind(this))
+    this._bind(
+      service
+        .getCharacteristic(Characteristic.CurrentHeaterCoolerState)
+        .updateValue(this._getCurrentHeaterCoolerState(dps)),
+      this.getCurrentHeaterCoolerState.bind(this),
+    )
 
-    service
-      .getCharacteristic(Characteristic.TargetHeaterCoolerState)
-      .setProps({
-        minValue: 1,
-        maxValue: 1,
-        validValues: [Characteristic.TargetHeaterCoolerState.HEAT],
-      })
-      .updateValue(this._getTargetHeaterCoolerState())
-      .on('get', this.getTargetHeaterCoolerState.bind(this))
-      .on('set', this.setTargetHeaterCoolerState.bind(this))
+    this._bind(
+      service
+        .getCharacteristic(Characteristic.TargetHeaterCoolerState)
+        .setProps({
+          minValue: 1,
+          maxValue: 1,
+          validValues: [Characteristic.TargetHeaterCoolerState.HEAT],
+        })
+        .updateValue(this._getTargetHeaterCoolerState()),
+      this.getTargetHeaterCoolerState.bind(this),
+      this.setTargetHeaterCoolerState.bind(this),
+    )
 
-    const characteristicCurrentTemperature = service
-      .getCharacteristic(Characteristic.CurrentTemperature)
-      .updateValue(this._getDividedState(dps[this.dpCurrentTemperature], this.temperatureDivisor))
-      .on('get', this.getDividedState.bind(this, this.dpCurrentTemperature, this.temperatureDivisor))
+    const characteristicCurrentTemperature = this._bind(
+      service
+        .getCharacteristic(Characteristic.CurrentTemperature)
+        .updateValue(this._getDividedState(dps[this.dpCurrentTemperature], this.temperatureDivisor)),
+      this.getDividedState.bind(this, this.dpCurrentTemperature, this.temperatureDivisor),
+    )
 
     this.log.debug(
       `[SimpleHeater] Initial current temperature from DP ${this.dpCurrentTemperature}: raw=${dps[this.dpCurrentTemperature]}, converted=${this._getDividedState(dps[this.dpCurrentTemperature], this.temperatureDivisor)}°C`,
@@ -91,10 +97,12 @@ class SimpleHeaterAccessory extends BaseAccessory {
     if (this.dpAmbientTemperature) {
       const ambientService = this.accessory.getService(Service.TemperatureSensor)
       if (ambientService) {
-        characteristicAmbientTemperature = ambientService
-          .getCharacteristic(Characteristic.CurrentTemperature)
-          .updateValue(this._getDividedState(dps[this.dpAmbientTemperature], this.ambientTemperatureDivisor))
-          .on('get', this.getDividedState.bind(this, this.dpAmbientTemperature, this.ambientTemperatureDivisor))
+        characteristicAmbientTemperature = this._bind(
+          ambientService
+            .getCharacteristic(Characteristic.CurrentTemperature)
+            .updateValue(this._getDividedState(dps[this.dpAmbientTemperature], this.ambientTemperatureDivisor)),
+          this.getDividedState.bind(this, this.dpAmbientTemperature, this.ambientTemperatureDivisor),
+        )
 
         this.log.debug(
           `[SimpleHeater] Initial ambient temperature from DP ${this.dpAmbientTemperature}: raw=${dps[this.dpAmbientTemperature]}, converted=${this._getDividedState(dps[this.dpAmbientTemperature], this.ambientTemperatureDivisor)}°C`,
@@ -102,16 +110,18 @@ class SimpleHeaterAccessory extends BaseAccessory {
       }
     }
 
-    const characteristicHeatingThresholdTemperature = service
-      .getCharacteristic(Characteristic.HeatingThresholdTemperature)
-      .setProps({
-        minValue: this.device.context.minTemperature || 15,
-        maxValue: this.device.context.maxTemperature || 35,
-        minStep: this.device.context.minTemperatureSteps || 1,
-      })
-      .updateValue(this._getDividedState(dps[this.dpDesiredTemperature], this.thresholdTemperatureDivisor))
-      .on('get', this.getDividedState.bind(this, this.dpDesiredTemperature, this.thresholdTemperatureDivisor))
-      .on('set', this.setTargetThresholdTemperature.bind(this))
+    const characteristicHeatingThresholdTemperature = this._bind(
+      service
+        .getCharacteristic(Characteristic.HeatingThresholdTemperature)
+        .setProps({
+          minValue: this.device.context.minTemperature || 15,
+          maxValue: this.device.context.maxTemperature || 35,
+          minStep: this.device.context.minTemperatureSteps || 1,
+        })
+        .updateValue(this._getDividedState(dps[this.dpDesiredTemperature], this.thresholdTemperatureDivisor)),
+      this.getDividedState.bind(this, this.dpDesiredTemperature, this.thresholdTemperatureDivisor),
+      this.setTargetThresholdTemperature.bind(this),
+    )
 
     this.characteristicHeatingThresholdTemperature = characteristicHeatingThresholdTemperature
 

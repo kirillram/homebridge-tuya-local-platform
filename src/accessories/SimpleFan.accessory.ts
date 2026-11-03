@@ -34,26 +34,28 @@ class SimpleFanAccessory extends BaseAccessory {
     this.fanCurrentSpeed = 0
     this.useStrings = this._coerceBoolean(this.device.context.useStrings, true)
 
-    const characteristicFanOn = serviceFan
-      .getCharacteristic(Characteristic.On)
-      .updateValue(this._getFanOn(dps[this.dpFanOn]))
-      .on('get', this.getFanOn.bind(this))
-      .on('set', this.setFanOn.bind(this))
+    const characteristicFanOn = this._bind(
+      serviceFan.getCharacteristic(Characteristic.On).updateValue(this._getFanOn(dps[this.dpFanOn])),
+      this.getFanOn.bind(this),
+      this.setFanOn.bind(this),
+    )
 
-    const characteristicRotationSpeed = serviceFan
-      .getCharacteristic(Characteristic.RotationSpeed)
-      .setProps({
-        minValue: 0,
-        maxValue: 100,
-        minStep: Math.max(100 / this.maxSpeed),
-      })
-      .updateValue(this.convertRotationSpeedFromTuyaToHomeKit(dps[this.dpRotationSpeed]))
-      .on('get', this.getSpeed.bind(this))
-      .on('set', this.setSpeed.bind(this))
+    const characteristicRotationSpeed = this._bind(
+      serviceFan
+        .getCharacteristic(Characteristic.RotationSpeed)
+        .setProps({
+          minValue: 0,
+          maxValue: 100,
+          minStep: Math.max(100 / this.maxSpeed),
+        })
+        .updateValue(this.convertRotationSpeedFromTuyaToHomeKit(dps[this.dpRotationSpeed])),
+      this.getSpeed.bind(this),
+      this.setSpeed.bind(this),
+    )
 
     this.device.on('change', (changes: DPSState, state: DPSState) => {
-      if (changes.hasOwnProperty(this.dpFanOn) && characteristicFanOn.value !== changes[this.dpFanOn])
-        characteristicFanOn.updateValue(changes[this.dpFanOn])
+      if (changes.hasOwnProperty(this.dpFanOn) && characteristicFanOn.value !== this._getFanOn(changes[this.dpFanOn]))
+        characteristicFanOn.updateValue(this._getFanOn(changes[this.dpFanOn]))
 
       if (
         changes.hasOwnProperty(this.dpRotationSpeed) &&
@@ -75,8 +77,8 @@ class SimpleFanAccessory extends BaseAccessory {
     })
   }
 
-  _getFanOn(dp: DPSValue): DPSValue {
-    return dp
+  _getFanOn(dp: DPSValue): boolean {
+    return this._coerceBoolean(dp, false)
   }
 
   setFanOn(value: DPSValue, callback: HomebridgeCallback): void {

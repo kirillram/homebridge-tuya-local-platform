@@ -19,10 +19,8 @@ class BaseAccessory {
   constructor(...props: any[]) {
     let isNew: boolean
     ;[this.platform, this.accessory, this.device, isNew = true] = [...props]
-    ;({
-      log: this.log,
-      api: { hap: this.hap },
-    } = this.platform)
+    this.log = this.platform.log
+    this.hap = this.platform.hap || this.platform.api.hap
 
     this.accessory.on('identify', (...args: any[]) => {
       this.log('%s - identify', this.device.context.name)
@@ -66,6 +64,92 @@ class BaseAccessory {
 
   _registerCharacteristics(_dps: DPSState): void {
     // Override in subclasses
+  }
+
+  /**
+   * Attach GET/SET handlers using onGet/onSet when HAP supports them, else legacy on('get')/on('set').
+   * Only one style is registered: HAP warns on every request when both are present.
+   *
+   * GET never fails — a missing/invalid value falls back to the last known one, so HomeKit
+   * doesn't mark the accessory "No Response" while the device is still connecting.
+   * SET failures (device offline, write failed) are reported to HomeKit as a communication failure.
+   */
+  _bind(
+    characteristic: any,
+    getHandler?: (callback: HomebridgeCallback) => void,
+    setHandler?: (value: any, callback: HomebridgeCallback) => void,
+  ): any {
+    const modern = typeof characteristic.onGet === 'function' && typeof characteristic.onSet === 'function'
+
+    if (getHandler) {
+      const runGet = () =>
+        new Promise((resolve) => {
+          let settled = false
+          const done: HomebridgeCallback = (_err, value) => {
+            if (settled) return
+            settled = true
+            if (value === undefined || value === null || (typeof value === 'number' && !Number.isFinite(value))) {
+              const fallback = characteristic.value
+              resolve(fallback === undefined || fallback === null ? 0 : fallback)
+            } else {
+              resolve(value)
+            }
+          }
+          try {
+            getHandler(done)
+          } catch {
+            done(null, characteristic.value ?? 0)
+          }
+        })
+
+      if (modern) characteristic.onGet(() => runGet())
+      else
+        characteristic.on('get', (callback: HomebridgeCallback) => {
+          runGet().then((value) => callback(null, value as any))
+        })
+    }
+
+    if (setHandler) {
+      const runSet = (value: any) =>
+        new Promise<void>((resolve, reject) => {
+          let settled = false
+          const done: HomebridgeCallback = (err) => {
+            if (settled) return
+            settled = true
+            if (err) reject(err)
+            else resolve()
+          }
+          try {
+            setHandler(value, done)
+          } catch (err) {
+            this.log.error(`Set handler failed for ${this.device.context.name}: ${(err as Error).message}`)
+            done(err as Error)
+          }
+        })
+
+      if (modern)
+        characteristic.onSet((value: any) =>
+          runSet(value).catch(() => {
+            throw this._communicationFailure()
+          }),
+        )
+      else
+        characteristic.on('set', (value: any, callback?: HomebridgeCallback) => {
+          runSet(value).then(
+            () => typeof callback === 'function' && callback(null),
+            (err) => typeof callback === 'function' && callback(err instanceof Error ? err : new Error(String(err))),
+          )
+        })
+    }
+
+    return characteristic
+  }
+
+  /** HAP status HomeKit shows as "No Response"; thrown from onSet when a write can't reach the device. */
+  _communicationFailure(): unknown {
+    const hap = this.hap as any
+    const status = hap?.HAPStatus?.SERVICE_COMMUNICATION_FAILURE ?? -70402
+    return typeof hap?.HapStatusError === 'function' ? new hap.HapStatusError(status) : status
   }
 
   _checkServiceName(service: HAPService, name: string): void {
@@ -149,20 +233,24 @@ class BaseAccessory {
     try {
       if (!this.device.connected) {
         this.log.warn(`${this.device.context.name} is not connected; cannot update state`)
-        if (callback) callback(null)
+        if (callback) callback(new Error('Not connected'))
         return
       }
+      let failed = false
       for (const dp in dps) {
         if (dps.hasOwnProperty(dp) && dps[dp] !== this.device.state[dp]) {
-          if (!this.device.update({ [dp.toString()]: dps[dp] })) {
-            this.log.warn(`Failed to update ${this.device.context.name}: ${JSON.stringify(dps)}`)
-          }
+          if (!this.device.update({ [dp.toString()]: dps[dp] })) failed = true
         }
+      }
+      if (failed) {
+        this.log.warn(`Failed to update ${this.device.context.name}: ${JSON.stringify(dps)}`)
+        if (callback) callback(new Error('Update failed'))
+        return
       }
       if (callback) callback(null)
     } catch (err) {
       this.log.error(`Failed to update ${this.device.context.name}: ${(err as Error).stack || err}`)
-      if (callback) callback(null)
+      if (callback) callback(err as Error)
     }
   }
 
@@ -240,7 +328,7 @@ class BaseAccessory {
     const unadjustedValue = max / ((Number(value) * (max - min)) / (scale * min) + 1)
     const convertedValue = Math.round(((unadjustedValue - 153) * (600 - 71)) / (max - min) + 71)
     if (!Number.isFinite(convertedValue)) return 140
-    return Math.min(600, Math.max(71, convertedValue))
+    return Math.min(500, Math.max(140, convertedValue))
   }
 
   convertColorFromHomeKitToTuya(value: Partial<HSBColor>, dpValue?: string): string {

@@ -2,14 +2,18 @@ import type { Characteristic as CharacteristicType, WithUUID } from 'homebridge'
 import type { EnergyCharacteristicsMap } from '../types'
 
 const createEnergyCharacteristics = (Characteristic: any): EnergyCharacteristicsMap => {
+  // hap-nodejs 1+ (Homebridge 2) no longer hangs Formats/Perms off Characteristic; the values are HAP wire constants
+  const FLOAT = Characteristic.Formats?.FLOAT ?? 'float'
+  const READ_NOTIFY = [Characteristic.Perms?.PAIRED_READ ?? 'pr', Characteristic.Perms?.NOTIFY ?? 'ev']
+
   class EnergyCharacteristic extends Characteristic {
     static readonly UUID: string = ''
 
     constructor(displayName: string, UUID: string) {
       super(displayName, UUID)
       this.setProps({
-        format: Characteristic.Formats.FLOAT,
-        perms: [Characteristic.Perms.PAIRED_READ, Characteristic.Perms.NOTIFY],
+        format: FLOAT,
+        perms: READ_NOTIFY,
       })
       this.value = this.getDefaultValue()
     }
@@ -21,9 +25,9 @@ const createEnergyCharacteristics = (Characteristic: any): EnergyCharacteristics
     constructor() {
       super('Amperes', Amperes.UUID)
       this.setProps({
-        format: Characteristic.Formats.FLOAT,
+        format: FLOAT,
         unit: 'A' as any,
-        perms: [Characteristic.Perms.PAIRED_READ, Characteristic.Perms.NOTIFY],
+        perms: READ_NOTIFY,
         minStep: 0.001,
       })
       this.value = this.getDefaultValue()
@@ -36,9 +40,9 @@ const createEnergyCharacteristics = (Characteristic: any): EnergyCharacteristics
     constructor() {
       super('Kilowatt Hours', KilowattHours.UUID)
       this.setProps({
-        format: Characteristic.Formats.FLOAT,
+        format: FLOAT,
         unit: 'kWh' as any,
-        perms: [Characteristic.Perms.PAIRED_READ, Characteristic.Perms.NOTIFY],
+        perms: READ_NOTIFY,
         minStep: 0.001,
       })
       this.value = this.getDefaultValue()
@@ -51,9 +55,9 @@ const createEnergyCharacteristics = (Characteristic: any): EnergyCharacteristics
     constructor() {
       super('Kilowatt Volt Ampere Hour', KilowattVoltAmpereHour.UUID)
       this.setProps({
-        format: Characteristic.Formats.FLOAT,
+        format: FLOAT,
         unit: 'kVAh' as any,
-        perms: [Characteristic.Perms.PAIRED_READ, Characteristic.Perms.NOTIFY],
+        perms: READ_NOTIFY,
         minStep: 0.001,
       })
       this.value = this.getDefaultValue()
@@ -66,9 +70,9 @@ const createEnergyCharacteristics = (Characteristic: any): EnergyCharacteristics
     constructor() {
       super('Volt Amperes', VoltAmperes.UUID)
       this.setProps({
-        format: Characteristic.Formats.FLOAT,
+        format: FLOAT,
         unit: 'VA' as any,
-        perms: [Characteristic.Perms.PAIRED_READ, Characteristic.Perms.NOTIFY],
+        perms: READ_NOTIFY,
         minStep: 0.001,
       })
       this.value = this.getDefaultValue()
@@ -81,9 +85,9 @@ const createEnergyCharacteristics = (Characteristic: any): EnergyCharacteristics
     constructor() {
       super('Volts', Volts.UUID)
       this.setProps({
-        format: Characteristic.Formats.FLOAT,
+        format: FLOAT,
         unit: 'V' as any,
-        perms: [Characteristic.Perms.PAIRED_READ, Characteristic.Perms.NOTIFY],
+        perms: READ_NOTIFY,
         minStep: 0.1,
       })
       this.value = this.getDefaultValue()
@@ -96,9 +100,9 @@ const createEnergyCharacteristics = (Characteristic: any): EnergyCharacteristics
     constructor() {
       super('Watts', Watts.UUID)
       this.setProps({
-        format: Characteristic.Formats.FLOAT,
+        format: FLOAT,
         unit: 'W' as any,
-        perms: [Characteristic.Perms.PAIRED_READ, Characteristic.Perms.NOTIFY],
+        perms: READ_NOTIFY,
         minStep: 0.1,
       })
       this.value = this.getDefaultValue()

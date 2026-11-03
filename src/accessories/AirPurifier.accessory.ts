@@ -103,40 +103,46 @@ class AirPurifierAccessory extends BaseAccessory {
 
     this.log.debug('_registerCharacteristics dps: %o', dps)
 
-    const characteristicActive = airPurifierService
-      .getCharacteristic(Characteristic.Active)
-      .updateValue(this._getActive(dps[DP_SWITCH]))
-      .on('get', this.getActive.bind(this))
-      .on('set', this.setActive.bind(this))
+    const characteristicActive = this._bind(
+      airPurifierService.getCharacteristic(Characteristic.Active).updateValue(this._getActive(dps[DP_SWITCH])),
+      this.getActive.bind(this),
+      this.setActive.bind(this),
+    )
 
-    const characteristicCurrentAirPurifierState = airPurifierService
-      .getCharacteristic(Characteristic.CurrentAirPurifierState)
-      .updateValue(this._getCurrentAirPurifierState(dps[DP_SWITCH]))
-      .on('get', this.getCurrentAirPurifierState.bind(this))
+    const characteristicCurrentAirPurifierState = this._bind(
+      airPurifierService
+        .getCharacteristic(Characteristic.CurrentAirPurifierState)
+        .updateValue(this._getCurrentAirPurifierState(dps[DP_SWITCH])),
+      this.getCurrentAirPurifierState.bind(this),
+    )
 
-    const characteristicTargetAirPurifierState = airPurifierService
-      .getCharacteristic(Characteristic.TargetAirPurifierState)
-      .updateValue(this._getTargetAirPurifierState(this._getMode(dps)))
-      .on('get', this.getTargetAirPurifierState.bind(this))
-      .on('set', this.setTargetAirPurifierState.bind(this))
+    const characteristicTargetAirPurifierState = this._bind(
+      airPurifierService
+        .getCharacteristic(Characteristic.TargetAirPurifierState)
+        .updateValue(this._getTargetAirPurifierState(this._getMode(dps))),
+      this.getTargetAirPurifierState.bind(this),
+      this.setTargetAirPurifierState.bind(this),
+    )
 
     let characteristicLockPhysicalControls: any
     if (!this.device.context.noChildLock) {
-      characteristicLockPhysicalControls = airPurifierService
-        .getCharacteristic(Characteristic.LockPhysicalControls)
-        .updateValue(this._getLockPhysicalControls(dps[DP_LOCK_PHYSICAL_CONTROLS]))
-        .on('get', this.getLockPhysicalControls.bind(this))
-        .on('set', this.setLockPhysicalControls.bind(this))
+      characteristicLockPhysicalControls = this._bind(
+        airPurifierService
+          .getCharacteristic(Characteristic.LockPhysicalControls)
+          .updateValue(this._getLockPhysicalControls(dps[DP_LOCK_PHYSICAL_CONTROLS])),
+        this.getLockPhysicalControls.bind(this),
+        this.setLockPhysicalControls.bind(this),
+      )
     } else {
       // Note: original code had a bug using `service` instead of `airPurifierService`
       this._removeCharacteristic(airPurifierService, Characteristic.LockPhysicalControls)
     }
 
-    const characteristicRotationSpeed = airPurifierService
-      .getCharacteristic(Characteristic.RotationSpeed)
-      .updateValue(this._getRotationSpeed(dps))
-      .on('get', this.getRotationSpeed.bind(this))
-      .on('set', this.setRotationSpeed.bind(this))
+    const characteristicRotationSpeed = this._bind(
+      airPurifierService.getCharacteristic(Characteristic.RotationSpeed).updateValue(this._getRotationSpeed(dps)),
+      this.getRotationSpeed.bind(this),
+      this.setRotationSpeed.bind(this),
+    )
 
     let airQualitySensorService = this.accessory.getService(Service.AirQualitySensor)
     let characteristicAirQuality: any
@@ -153,15 +159,15 @@ class AirPurifierAccessory extends BaseAccessory {
       const nameAirQuality = this.device.context.nameAirQuality || 'Air Quality'
       this._checkServiceName(airQualitySensorService, nameAirQuality)
 
-      characteristicAirQuality = airQualitySensorService
-        .getCharacteristic(Characteristic.AirQuality)
-        .updateValue(this._getAirQuality(dps))
-        .on('get', this.getAirQuality.bind(this))
+      characteristicAirQuality = this._bind(
+        airQualitySensorService.getCharacteristic(Characteristic.AirQuality).updateValue(this._getAirQuality(dps)),
+        this.getAirQuality.bind(this),
+      )
 
-      characteristicPM25Density = airQualitySensorService
-        .getCharacteristic(Characteristic.PM2_5Density)
-        .updateValue(dps[DP_PM25])
-        .on('get', this.getPM25.bind(this))
+      characteristicPM25Density = this._bind(
+        airQualitySensorService.getCharacteristic(Characteristic.PM2_5Density).updateValue(dps[DP_PM25]),
+        this.getPM25.bind(this),
+      )
     }
 
     this.device.on('change', (changes: DPSState, state: DPSState) => {

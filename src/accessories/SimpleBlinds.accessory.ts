@@ -98,21 +98,23 @@ class SimpleBlindsAccessory extends BaseAccessory {
     this.assumedState = BLINDS_STOPPED
     this.changeTime = this.targetPosition = false
 
-    const characteristicCurrentPosition = service
-      .getCharacteristic(Characteristic.CurrentPosition)
-      .updateValue(this._getCurrentPosition(dps[this.dpAction]))
-      .on('get', this.getCurrentPosition.bind(this))
+    const characteristicCurrentPosition = this._bind(
+      service
+        .getCharacteristic(Characteristic.CurrentPosition)
+        .updateValue(this._getCurrentPosition(dps[this.dpAction])),
+      this.getCurrentPosition.bind(this),
+    )
 
-    const characteristicTargetPosition = service
-      .getCharacteristic(Characteristic.TargetPosition)
-      .updateValue(this._getTargetPosition(dps[this.dpAction]))
-      .on('get', this.getTargetPosition.bind(this))
-      .on('set', this.setTargetPosition.bind(this))
+    const characteristicTargetPosition = this._bind(
+      service.getCharacteristic(Characteristic.TargetPosition).updateValue(this._getTargetPosition(dps[this.dpAction])),
+      this.getTargetPosition.bind(this),
+      this.setTargetPosition.bind(this),
+    )
 
-    const characteristicPositionState = service
-      .getCharacteristic(Characteristic.PositionState)
-      .updateValue(this._getPositionState())
-      .on('get', this.getPositionState.bind(this))
+    const characteristicPositionState = this._bind(
+      service.getCharacteristic(Characteristic.PositionState).updateValue(this._getPositionState()),
+      this.getPositionState.bind(this),
+    )
 
     this.device.on('change', (changes: DPSState) => {
       this.log.debug('[TuyaAccessory] Blinds saw change to ' + changes[this.dpAction])

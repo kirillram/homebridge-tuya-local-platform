@@ -31,27 +31,31 @@ class TWLightAccessory extends BaseAccessory {
     this.dpBrightness = this._getCustomDP(this.device.context.dpBrightness) || '2'
     this.dpColorTemperature = this._getCustomDP(this.device.context.dpColorTemperature) || '3'
 
-    const characteristicOn = service
-      .getCharacteristic(Characteristic.On)
-      .updateValue(!!dps[this.dpPower])
-      .on('get', this.getPower.bind(this, this.dpPower))
-      .on('set', this.setPower.bind(this, this.dpPower))
+    const characteristicOn = this._bind(
+      service.getCharacteristic(Characteristic.On).updateValue(!!dps[this.dpPower]),
+      this.getPower.bind(this, this.dpPower),
+      this.setPower.bind(this, this.dpPower),
+    )
 
-    const characteristicBrightness = service
-      .getCharacteristic(Characteristic.Brightness)
-      .updateValue(this.convertBrightnessFromTuyaToHomeKit(dps[this.dpBrightness]))
-      .on('get', this.getBrightness.bind(this))
-      .on('set', this.setBrightness.bind(this))
+    const characteristicBrightness = this._bind(
+      service
+        .getCharacteristic(Characteristic.Brightness)
+        .updateValue(this.convertBrightnessFromTuyaToHomeKit(dps[this.dpBrightness])),
+      this.getBrightness.bind(this),
+      this.setBrightness.bind(this),
+    )
 
-    const characteristicColorTemperature = service
-      .getCharacteristic(Characteristic.ColorTemperature)
-      .setProps({
-        minValue: 0,
-        maxValue: 600,
-      })
-      .updateValue(this.convertColorTemperatureFromTuyaToHomeKit(dps[this.dpColorTemperature]))
-      .on('get', this.getColorTemperature.bind(this))
-      .on('set', this.setColorTemperature.bind(this))
+    const characteristicColorTemperature = this._bind(
+      service
+        .getCharacteristic(Characteristic.ColorTemperature)
+        .setProps({
+          minValue: 140,
+          maxValue: 500,
+        })
+        .updateValue(this.convertColorTemperatureFromTuyaToHomeKit(dps[this.dpColorTemperature])),
+      this.getColorTemperature.bind(this),
+      this.setColorTemperature.bind(this),
+    )
 
     this.characteristicColorTemperature = characteristicColorTemperature
 

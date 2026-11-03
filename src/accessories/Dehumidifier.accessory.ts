@@ -66,20 +66,26 @@ class DehumidifierAccessory extends BaseAccessory {
     const { Service, Characteristic } = this.hap
 
     const infoService = this.accessory.getService(Service.AccessoryInformation)
-    infoService.getCharacteristic(Characteristic.Manufacturer).updateValue(this.device.context.manufacturer)
-    infoService.getCharacteristic(Characteristic.Model).updateValue(this.device.context.model)
+    infoService
+      .getCharacteristic(Characteristic.Manufacturer)
+      .updateValue(this.device.context.manufacturer || 'Unknown')
+    infoService.getCharacteristic(Characteristic.Model).updateValue(this.device.context.model || 'Unknown')
 
-    this.accessory
-      .getService(Service.TemperatureSensor)
-      .getCharacteristic(Characteristic.CurrentTemperature)
-      .updateValue(this._getCurrentTemperature(dps[this.getDp('CurrentTemperature')]))
-      .on('get', this.getCurrentTemperature.bind(this))
+    this._bind(
+      this.accessory
+        .getService(Service.TemperatureSensor)
+        .getCharacteristic(Characteristic.CurrentTemperature)
+        .updateValue(this._getCurrentTemperature(dps[this.getDp('CurrentTemperature')])),
+      this.getCurrentTemperature.bind(this),
+    )
 
-    this.accessory
-      .getService(Service.HumiditySensor)
-      .getCharacteristic(Characteristic.CurrentRelativeHumidity)
-      .updateValue(this._getCurrentHumidity(dps[this.getDp('CurrentHumidity')]))
-      .on('get', this.getCurrentHumidity.bind(this))
+    this._bind(
+      this.accessory
+        .getService(Service.HumiditySensor)
+        .getCharacteristic(Characteristic.CurrentRelativeHumidity)
+        .updateValue(this._getCurrentHumidity(dps[this.getDp('CurrentHumidity')])),
+      this.getCurrentHumidity.bind(this),
+    )
 
     const service = this.accessory.getService(Service.HumidifierDehumidifier)
     this._checkServiceName(service, this.device.context.name)
@@ -87,16 +93,18 @@ class DehumidifierAccessory extends BaseAccessory {
     let characteristicSpeed: any
     if (!this.device.context.noSpeed) {
       const fanService = this.accessory.getService(Service.Fan)
-      characteristicSpeed = fanService
-        .getCharacteristic(Characteristic.RotationSpeed)
-        .setProps({
-          minValue: this.device.context.minSpeed || 1,
-          maxValue: this.device.context.maxSpeed || 2,
-          minStep: this.device.context.speedSteps || 1,
-        })
-        .updateValue(this._getRotationSpeed(dps))
-        .on('get', this.getRotationSpeed.bind(this))
-        .on('set', this.setRotationSpeed.bind(this))
+      characteristicSpeed = this._bind(
+        fanService
+          .getCharacteristic(Characteristic.RotationSpeed)
+          .setProps({
+            minValue: this.device.context.minSpeed || 1,
+            maxValue: this.device.context.maxSpeed || 2,
+            minStep: this.device.context.speedSteps || 1,
+          })
+          .updateValue(this._getRotationSpeed(dps)),
+        this.getRotationSpeed.bind(this),
+        this.setRotationSpeed.bind(this),
+      )
     }
 
     this._removeCharacteristic(service, Characteristic.SwingMode)
@@ -107,45 +115,53 @@ class DehumidifierAccessory extends BaseAccessory {
       .getCharacteristic(Characteristic.TargetHumidifierDehumidifierState)
       .updateValue(Characteristic.TargetHumidifierDehumidifierState.DEHUMIDIFIER)
 
-    service
-      .getCharacteristic(Characteristic.CurrentRelativeHumidity)
-      .updateValue(this._getCurrentHumidity(dps[this.getDp('CurrentHumidity')]))
-      .on('get', this.getCurrentHumidity.bind(this))
+    this._bind(
+      service
+        .getCharacteristic(Characteristic.CurrentRelativeHumidity)
+        .updateValue(this._getCurrentHumidity(dps[this.getDp('CurrentHumidity')])),
+      this.getCurrentHumidity.bind(this),
+    )
 
-    const characteristicActive = service
-      .getCharacteristic(Characteristic.Active)
-      .updateValue(this._getActive(dps[this.getDp('Active')]))
-      .on('get', this.getActive.bind(this))
-      .on('set', this.setActive.bind(this))
+    const characteristicActive = this._bind(
+      service.getCharacteristic(Characteristic.Active).updateValue(this._getActive(dps[this.getDp('Active')])),
+      this.getActive.bind(this),
+      this.setActive.bind(this),
+    )
 
-    service
-      .getCharacteristic(Characteristic.WaterLevel)
-      .updateValue(dps[this.getDp('TankState')])
-      .on('get', this.getTankState.bind(this))
+    this._bind(
+      service.getCharacteristic(Characteristic.WaterLevel).updateValue(dps[this.getDp('TankState')]),
+      this.getTankState.bind(this),
+    )
 
     let characteristicChildLock: any
 
     if (!this.device.context.noChildLock) {
       const lockService = this.accessory.getService(Service.LockMechanism)
-      characteristicChildLock = lockService
-        .getCharacteristic(Characteristic.LockCurrentState)
-        .updateValue(this._getLockTargetState(dps[this.getDp('ChildLock')]))
-        .on('get', this.getLockTargetState.bind(this))
-      characteristicChildLock = lockService
-        .getCharacteristic(Characteristic.LockTargetState)
-        .updateValue(this._getLockTargetState(dps[this.getDp('ChildLock')]))
-        .on('get', this.getLockTargetState.bind(this))
-        .on('set', this.setLockTargetState.bind(this))
+      characteristicChildLock = this._bind(
+        lockService
+          .getCharacteristic(Characteristic.LockCurrentState)
+          .updateValue(this._getLockTargetState(dps[this.getDp('ChildLock')])),
+        this.getLockTargetState.bind(this),
+      )
+      characteristicChildLock = this._bind(
+        lockService
+          .getCharacteristic(Characteristic.LockTargetState)
+          .updateValue(this._getLockTargetState(dps[this.getDp('ChildLock')])),
+        this.getLockTargetState.bind(this),
+        this.setLockTargetState.bind(this),
+      )
     } else this._removeCharacteristic(service, Characteristic.LockTargetState)
 
     this.characteristicHumidity = service.getCharacteristic(Characteristic.RelativeHumidityDehumidifierThreshold)
-    this.characteristicHumidity
-      .setProps({
-        minStep: this.device.context.humiditySteps || 5,
-      })
-      .updateValue(dps[this.getDp('Humidity')])
-      .on('get', this.getState.bind(this, this.getDp('Humidity')))
-      .on('set', this.setTargetHumidity.bind(this))
+    this._bind(
+      this.characteristicHumidity
+        .setProps({
+          minStep: this.device.context.humiditySteps || 5,
+        })
+        .updateValue(dps[this.getDp('Humidity')]),
+      this.getState.bind(this, this.getDp('Humidity')),
+      this.setTargetHumidity.bind(this),
+    )
 
     this.device.on('change', (changes: DPSState, state: DPSState) => {
       if (changes.hasOwnProperty(this.getDp('Active'))) {

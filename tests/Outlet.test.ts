@@ -88,8 +88,8 @@ describe('OutletAccessory', () => {
         return char
       })
       expect(() => outlet._registerCharacteristics({})).not.toThrow()
-      expect(char.on).toHaveBeenCalledWith('set', expect.any(Function))
-      expect(char.on).toHaveBeenCalledWith('get', expect.any(Function))
+      expect(char.onSet).toHaveBeenCalledWith(expect.any(Function))
+      expect(char.onGet).toHaveBeenCalledWith(expect.any(Function))
     })
   })
 

@@ -38,33 +38,39 @@ class OutletAccessory extends BaseAccessory {
 
     let characteristicVolts: any
     if (energyKeys.volts) {
-      characteristicVolts = service
-        .getCharacteristic(EnergyCharacteristics.Volts)
-        .updateValue(this._getDividedState(dps[energyKeys.volts as string], energyKeys.voltsDivisor))
-        .on('get', this.getDividedState.bind(this, energyKeys.volts, energyKeys.voltsDivisor))
+      characteristicVolts = this._bind(
+        service
+          .getCharacteristic(EnergyCharacteristics.Volts)
+          .updateValue(this._getDividedState(dps[energyKeys.volts as string], energyKeys.voltsDivisor)),
+        this.getDividedState.bind(this, energyKeys.volts, energyKeys.voltsDivisor),
+      )
     } else this._removeCharacteristic(service, EnergyCharacteristics.Volts)
 
     let characteristicAmps: any
     if (energyKeys.amps) {
-      characteristicAmps = service
-        .getCharacteristic(EnergyCharacteristics.Amperes)
-        .updateValue(this._getDividedState(dps[energyKeys.amps as string], energyKeys.ampsDivisor))
-        .on('get', this.getDividedState.bind(this, energyKeys.amps, energyKeys.ampsDivisor))
+      characteristicAmps = this._bind(
+        service
+          .getCharacteristic(EnergyCharacteristics.Amperes)
+          .updateValue(this._getDividedState(dps[energyKeys.amps as string], energyKeys.ampsDivisor)),
+        this.getDividedState.bind(this, energyKeys.amps, energyKeys.ampsDivisor),
+      )
     } else this._removeCharacteristic(service, EnergyCharacteristics.Amperes)
 
     let characteristicWatts: any
     if (energyKeys.watts) {
-      characteristicWatts = service
-        .getCharacteristic(EnergyCharacteristics.Watts)
-        .updateValue(this._getDividedState(dps[energyKeys.watts as string], energyKeys.wattsDivisor))
-        .on('get', this.getDividedState.bind(this, energyKeys.watts, energyKeys.wattsDivisor))
+      characteristicWatts = this._bind(
+        service
+          .getCharacteristic(EnergyCharacteristics.Watts)
+          .updateValue(this._getDividedState(dps[energyKeys.watts as string], energyKeys.wattsDivisor)),
+        this.getDividedState.bind(this, energyKeys.watts, energyKeys.wattsDivisor),
+      )
     } else this._removeCharacteristic(service, EnergyCharacteristics.Watts)
 
-    const characteristicOn = service
-      .getCharacteristic(Characteristic.On)
-      .updateValue(this._coerceBoolean(dps[this.dpPower], false))
-      .on('get', this.getPower.bind(this, this.dpPower))
-      .on('set', this.setPower.bind(this, this.dpPower))
+    const characteristicOn = this._bind(
+      service.getCharacteristic(Characteristic.On).updateValue(this._coerceBoolean(dps[this.dpPower], false)),
+      this.getPower.bind(this, this.dpPower),
+      this.setPower.bind(this, this.dpPower),
+    )
 
     this.device.on('change', (changes: DPSState) => {
       if (changes.hasOwnProperty(this.dpPower) && characteristicOn.value !== !!changes[this.dpPower])
