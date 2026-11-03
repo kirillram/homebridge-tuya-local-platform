@@ -244,6 +244,22 @@ describe('TuyaAccessory', () => {
       acc.update()
       expect(lastSocket.write).toHaveBeenCalled()
     })
+
+    it('treats socket backpressure as a successful write', () => {
+      const acc = new TuyaAccessory(makeProps({ connect: true }) as any)
+      lastSocket.emit('connect')
+      // socket.write() returns false when data is queued in memory, not when it fails
+      lastSocket.write.mockReturnValue(false)
+      expect(acc.update({ '1': true })).toBe(true)
+    })
+
+    it('reports a failed write when the socket is no longer writable', () => {
+      const acc = new TuyaAccessory(makeProps({ connect: true }) as any)
+      lastSocket.emit('connect')
+      lastSocket.destroyed = true
+      expect(acc.update({ '1': true })).toBe(false)
+      expect(lastSocket.write).not.toHaveBeenCalled()
+    })
   })
 
   // ── Message handler 3.1 via simulated "data" events ──────────────────────────
@@ -445,7 +461,9 @@ describe('TuyaAccessory', () => {
       expect(lastSocket).toBeTruthy()
 
       const connectSpy = vi.fn()
+      const changeSpy = vi.fn()
       acc.on('connect', connectSpy)
+      acc.on('change', changeSpy)
 
       lastSocket.emit('connect')
       lastSocket.emit('ready')
@@ -471,10 +489,44 @@ describe('TuyaAccessory', () => {
       expect(acc.session_key).toBeInstanceOf(Buffer)
       expect(acc.session_key!.length).toBe(16)
       expect(connectSpy).toHaveBeenCalled()
+      // HomeKit characteristics are wired on the first 'change' event
+      expect(changeSpy).toHaveBeenCalled()
 
       // Finish (cmd 5) should have been sent
       const cmds = lastSocket.write.mock.calls.map((c: any[]) => (c[0] as Buffer).readUInt32BE(10))
       expect(cmds).toContain(5)
+    })
+
+    it('sends a tuyapi-style DP_QUERY_NEW payload after handshake', async () => {
+      const acc = new TuyaAccessory(makeProps({ version: '3.5', connect: true }) as any)
+      lastSocket.emit('connect')
+      lastSocket.emit('ready')
+      const localKey = (acc as any)._tmpLocalKey as Buffer
+      const remoteKey = Buffer.from('fedcba0987654321')
+      const remoteHmac = crypto.createHmac('sha256', KEY).update(localKey).digest()
+      lastSocket.emit('data', buildGcmFrame(4, Buffer.concat([remoteKey, remoteHmac]), KEY, 2))
+      await flushQueue()
+
+      const queryFrame: Buffer | undefined = lastSocket.write.mock.calls
+        .map((c: any[]) => c[0] as Buffer)
+        .find((buf) => buf.readUInt32BE(10) === 16)
+      expect(queryFrame).toBeDefined()
+
+      const data = queryFrame!.slice(4, queryFrame!.length - 4)
+      const header = data.slice(0, 14)
+      const iv = data.slice(14, 26)
+      const tag = data.slice(data.length - 16)
+      const ciphertext = data.slice(26, data.length - 16)
+      const decipher = crypto.createDecipheriv('aes-128-gcm', acc.session_key!, iv)
+      decipher.setAuthTag(tag)
+      decipher.setAAD(header)
+      const plain = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8')
+      const payload = JSON.parse(plain)
+      expect(payload.gwId).toBe('device-001')
+      expect(payload.devId).toBe('device-001')
+      expect(payload.uid).toBe('device-001')
+      expect(payload.dps).toEqual({})
+      expect(payload.t).toBeDefined()
     })
 
     it('decrypts DP updates with the session key', async () => {

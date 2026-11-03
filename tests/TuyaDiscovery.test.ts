@@ -55,6 +55,23 @@ vi.mock('dgram', () => {
   return { default: { createSocket }, createSocket }
 })
 
+vi.mock('os', () => ({
+  default: {
+    networkInterfaces: () => ({
+      en0: [
+        {
+          address: '192.168.1.150',
+          netmask: '255.255.255.0',
+          family: 'IPv4',
+          mac: '00:00:00:00:00:00',
+          internal: false,
+          cidr: '192.168.1.150/24',
+        },
+      ],
+    }),
+  },
+}))
+
 /**
  * Build a 6699 AES-GCM discovery frame (protocol 3.5).
  */
@@ -76,6 +93,20 @@ function buildGcmDiscoveryFrame(payload: Record<string, unknown>, includeRetcode
   const tag = cipher.getAuthTag()
 
   return Buffer.concat([header, iv, encrypted, tag, Buffer.from([0x00, 0x00, 0x99, 0x66])])
+}
+
+function decryptGcmFrame(msg: Buffer): string {
+  const data = msg.slice(4, msg.length - 4)
+  const header = data.slice(0, 14)
+  const iv = data.slice(14, 26)
+  const tag = data.slice(data.length - 16)
+  const ciphertext = data.slice(26, data.length - 16)
+  const decipher = crypto.createDecipheriv('aes-128-gcm', UDP_KEY, iv)
+  decipher.setAuthTag(tag)
+  decipher.setAAD(header)
+  let result = Buffer.concat([decipher.update(ciphertext), decipher.final()])
+  if (result.length >= 4 && result[0] !== 0x7b) result = result.slice(4)
+  return result.toString('utf8').replace(/\0+$/g, '')
 }
 
 describe('TuyaDiscovery', () => {
@@ -211,6 +242,55 @@ describe('TuyaDiscovery', () => {
 
       expect(discoverSpy).toHaveBeenCalledTimes(1)
       expect(discoverSpy.mock.calls[0][0].id).toBe('solicit-device')
+      discovery.stop()
+    })
+
+    it('should silently ignore app solicitation echoes on port 7000', () => {
+      discovery.start({ log })
+      const discoverSpy = vi.fn()
+      discovery.on('discover', discoverSpy)
+
+      // Own (or Smart Life app) UDP/7000 broadcasts look like this and must not be errors
+      const frame = buildGcmDiscoveryFrame({ from: 'app', ip: ' ' }, false)
+      const info = { address: '192.168.1.150', port: 7000, family: 'IPv4', size: frame.length }
+
+      ;(discovery as any)._onDgramMessage(7000, frame, info)
+
+      expect(discoverSpy).not.toHaveBeenCalled()
+      expect(log.error).not.toHaveBeenCalled()
+      discovery.stop()
+    })
+
+    it('should use the sender address when a 3.5 reply has gwId but a blank ip', () => {
+      discovery.start({ log, ids: ['blank-ip-device'] })
+      const discoverSpy = vi.fn()
+      discovery.on('discover', discoverSpy)
+
+      const frame = buildGcmDiscoveryFrame({ gwId: 'blank-ip-device', ip: ' ', version: '3.5' })
+      const info = { address: '192.168.1.80', port: 7000, family: 'IPv4', size: frame.length }
+
+      ;(discovery as any)._onDgramMessage(7000, frame, info)
+
+      expect(discoverSpy).toHaveBeenCalledTimes(1)
+      expect(discoverSpy.mock.calls[0][0].id).toBe('blank-ip-device')
+      expect(discoverSpy.mock.calls[0][0].ip).toBe('192.168.1.80')
+      discovery.stop()
+    })
+
+    it('should advertise a real local IPv4 in 3.5 solicitation packets', () => {
+      discovery.start({ log })
+      const socket = (discovery as any)._servers[7000]
+      ;(discovery as any)._solicit()
+
+      expect(socket.send).toHaveBeenCalled()
+      const packet: Buffer = socket.send.mock.calls[socket.send.mock.calls.length - 1][0]
+      expect(packet.readUInt32BE(0)).toBe(0x00006699)
+      expect(packet.readUInt32BE(10)).toBe(0x25) // REQ_DEVINFO
+
+      const json = JSON.parse(decryptGcmFrame(packet))
+      expect(json.from).toBe('app')
+      expect(json.ip).toBe('192.168.1.150')
+      expect(socket.send.mock.calls.some((call: any[]) => call[4] === '192.168.1.255')).toBe(true)
       discovery.stop()
     })
 

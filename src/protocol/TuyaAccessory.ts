@@ -63,6 +63,7 @@ class TuyaAccessory extends EventEmitter {
     this.log = props.log
     this.context = { version: '3.1', port: 6668, ...props } as TuyaAccessory['context']
     if (!this.context.version) this.context.version = '3.1'
+    if (!this.context.port) this.context.port = 6668
     this.state = {}
     this._cachedBuffer = Buffer.allocUnsafe(0)
 
@@ -101,9 +102,9 @@ class TuyaAccessory extends EventEmitter {
     }
 
     this._socket = new net.Socket() as TuyaSocket
-
     this._incrementAttemptCounter()
-    ;(this._socket.reconnect = () => {
+
+    this._socket.reconnect = () => {
       if (this._socket._pinger) {
         clearTimeout(this._socket._pinger)
         this._socket._pinger = null
@@ -131,8 +132,8 @@ class TuyaAccessory extends EventEmitter {
 
       this._incrementAttemptCounter()
 
-      this._socket.connect(this.context.port, this.context.ip!)
-    })()
+      this._socket.connect(this.context.port || 6668, this.context.ip!)
+    }
 
     this._socket._ping = () => {
       if (this._socket._pinger) clearTimeout(this._socket._pinger)
@@ -170,43 +171,72 @@ class TuyaAccessory extends EventEmitter {
       if (this.context.intro === false) return
       this.connected = true
 
-      if (this._needsSessionHandshake()) {
-        this._tmpLocalKey = crypto.randomBytes(16)
-        const payload: SendPayload = {
-          data: this._tmpLocalKey,
-          encrypted: true,
-          cmd: 3,
+      try {
+        if (this._needsSessionHandshake()) {
+          this._tmpLocalKey = crypto.randomBytes(16)
+          const payload: SendPayload = {
+            data: this._tmpLocalKey,
+            encrypted: true,
+            cmd: 3,
+          }
+          this._send(payload)
+        } else {
+          this.update()
         }
-        this._send(payload)
-      } else {
-        this.update()
+      } catch (err) {
+        this.log.error(`Failed to start session with ${this.context.name}: ${(err as Error).stack || err}`)
       }
     })
 
     this._socket.on('data', (msg: Buffer) => {
-      this._cachedBuffer = Buffer.concat([this._cachedBuffer, msg])
+      try {
+        this._cachedBuffer = Buffer.concat([this._cachedBuffer, msg])
 
-      const is35 = this.context.version === '3.5'
-      const prefixHex = is35 ? '00006699' : '000055aa'
-      const suffixHex = is35 ? '00009966' : '0000aa55'
+        const is35 = this.context.version === '3.5'
+        if (is35) {
+          while (this._cachedBuffer.length >= 22) {
+            const startingIndex = this._cachedBuffer.indexOf('00006699', 'hex')
+            if (startingIndex === -1) {
+              this._cachedBuffer = Buffer.allocUnsafe(0)
+              break
+            }
+            if (startingIndex !== 0) this._cachedBuffer = this._cachedBuffer.slice(startingIndex)
+            if (this._cachedBuffer.length < 18) break
 
-      do {
-        const startingIndex = this._cachedBuffer.indexOf(prefixHex, 'hex')
-        if (startingIndex === -1) {
-          this._cachedBuffer = Buffer.allocUnsafe(0)
-          break
+            const payloadLen = this._cachedBuffer.readUInt32BE(14)
+            const frameLen = 18 + payloadLen + 4
+            if (this._cachedBuffer.length < frameLen) break
+
+            this._msgQueue.push({ msg: this._cachedBuffer.slice(0, frameLen) })
+            this._cachedBuffer = this._cachedBuffer.slice(frameLen)
+          }
+          return
         }
-        if (startingIndex !== 0) this._cachedBuffer = this._cachedBuffer.slice(startingIndex)
 
-        let endingIndex = this._cachedBuffer.indexOf(suffixHex, 'hex')
-        if (endingIndex === -1) break
+        const prefixHex = '000055aa'
+        const suffixHex = '0000aa55'
 
-        endingIndex += 4
+        do {
+          const startingIndex = this._cachedBuffer.indexOf(prefixHex, 'hex')
+          if (startingIndex === -1) {
+            this._cachedBuffer = Buffer.allocUnsafe(0)
+            break
+          }
+          if (startingIndex !== 0) this._cachedBuffer = this._cachedBuffer.slice(startingIndex)
 
-        this._msgQueue.push({ msg: this._cachedBuffer.slice(0, endingIndex) })
+          let endingIndex = this._cachedBuffer.indexOf(suffixHex, 'hex')
+          if (endingIndex === -1) break
 
-        this._cachedBuffer = this._cachedBuffer.slice(endingIndex)
-      } while (this._cachedBuffer.length)
+          endingIndex += 4
+
+          this._msgQueue.push({ msg: this._cachedBuffer.slice(0, endingIndex) })
+
+          this._cachedBuffer = this._cachedBuffer.slice(endingIndex)
+        } while (this._cachedBuffer.length)
+      } catch (err) {
+        this.log.error(`Failed to parse message from ${this.context.name}: ${(err as Error).stack || err}`)
+        this._cachedBuffer = Buffer.allocUnsafe(0)
+      }
     })
 
     this._socket.on('error', (err: NodeJS.ErrnoException) => {
@@ -215,7 +245,7 @@ class TuyaAccessory extends EventEmitter {
 
       if (err && (err.code === 'ECONNRESET' || err.code === 'EPIPE') && this._connectionAttempts < 10) {
         this.log.debug(`Reconnecting with connection attempts =  ${this._connectionAttempts}`)
-        return process.nextTick(this._socket.reconnect.bind(this))
+        return process.nextTick(() => this._socket.reconnect())
       }
 
       this._socket.destroy()
@@ -255,6 +285,8 @@ class TuyaAccessory extends EventEmitter {
       this.session_key = null
       this.log.info('Disconnected from', this.context.name)
     })
+
+    this._socket.reconnect()
   }
 
   private _incrementAttemptCounter(): void {
@@ -585,6 +617,21 @@ class TuyaAccessory extends EventEmitter {
   }
 
   private _msgHandler_3_5(task: MessageTask, callback: () => void): void {
+    let finished = false
+    const done = () => {
+      if (finished) return
+      finished = true
+      callback()
+    }
+    try {
+      this._handle35(task, done)
+    } catch (err) {
+      this.log.error(`3.5 handler error for ${this.context.name}: ${(err as Error).stack || err}`)
+      done()
+    }
+  }
+
+  private _handle35(task: MessageTask, callback: () => void): void {
     if (!(task.msg instanceof Buffer)) return callback()
 
     const len = task.msg.length
@@ -658,13 +705,16 @@ class TuyaAccessory extends EventEmitter {
     }
 
     if (cmd === 4) {
-      this._tmpRemoteKey = (parsedPayload as Buffer).subarray(0, 16)
+      if (!Buffer.isBuffer(parsedPayload) || parsedPayload.length < 48) {
+        this.log.info(`Invalid 3.5 handshake payload from ${this.context.name}`)
+        return callback()
+      }
+      this._tmpRemoteKey = parsedPayload.subarray(0, 16)
       const calcLocalHmac = hmac(this._tmpLocalKey!, this.context.key).toString('hex')
       const expLocalHmac = (parsedPayload as Buffer).slice(16, 16 + 32).toString('hex')
       if (expLocalHmac !== calcLocalHmac) {
-        throw new Error(
-          `HMAC mismatch(keys): expected ${expLocalHmac}, was ${calcLocalHmac}. ${(parsedPayload as Buffer).toString('hex')}`,
-        )
+        this.log.info(`HMAC mismatch(keys) from ${this.context.name}: expected ${expLocalHmac}, was ${calcLocalHmac}`)
+        return callback()
       }
       const payload: SendPayload = {
         data: hmac(this._tmpRemoteKey!, this.context.key) as unknown as Buffer,
@@ -681,9 +731,13 @@ class TuyaAccessory extends EventEmitter {
       }
       this.session_key = encrypt35SessionKey(this.session_key, this.context.key, this._tmpLocalKey!)
 
+      // tuyapi aligns the next client sequence to the device's cmd-4 sequence
+      this._sendCounter = task.msg.readUInt32BE(6)
+
       this.connected = true
-      this.update()
       this.emit('connect')
+      this.emit('change', {}, this.state)
+      this.update()
       if (this._socket._pinger) clearTimeout(this._socket._pinger)
       this._socket._pinger = setTimeout(() => this._socket._ping(), 1000)
 
@@ -770,6 +824,9 @@ class TuyaAccessory extends EventEmitter {
         data: {
           gwId: this.context.id,
           devId: this.context.id,
+          t: Math.round(Date.now() / 1000).toString(),
+          dps: {},
+          uid: this.context.id,
         },
         cmd: this._isNewProtocol() ? 16 : 10,
       })
@@ -803,6 +860,17 @@ class TuyaAccessory extends EventEmitter {
     if (this.context.version === '3.3' || this.context.version === '3.2') return this._send_3_3(o)
     if (this.context.version === '3.5') return this._send_3_5(o)
     return this._send_3_4(o)
+  }
+
+  /**
+   * Write a frame to the socket. Returns false only when the socket can't take data;
+   * socket.write() itself returns false for mere backpressure (data still queued).
+   */
+  private _write(buffer: Buffer): boolean {
+    const socket = this._socket as any
+    if (!socket || socket.destroyed === true || socket.writable === false) return false
+    socket.write(buffer)
+    return true
   }
 
   private _send_3_1(o: SendPayload): boolean {
@@ -840,7 +908,7 @@ class TuyaAccessory extends EventEmitter {
     const len = Buffer.allocUnsafe(4)
     len.writeInt32BE(suffix.length, 0)
 
-    return this._socket.write(Buffer.concat([prefix, len, suffix]))
+    return this._write(Buffer.concat([prefix, len, suffix]))
   }
 
   private _send_3_3(o: SendPayload): boolean {
@@ -872,7 +940,7 @@ class TuyaAccessory extends EventEmitter {
     payload.writeUInt32BE(payload.length - 16, 12)
     payload.writeInt32BE(getCRC32(payload.slice(0, payload.length - 8)), payload.length - 8)
 
-    return this._socket.write(payload)
+    return this._write(payload)
   }
 
   private _fakeUpdate(dps: DPSState): void {
@@ -928,7 +996,7 @@ class TuyaAccessory extends EventEmitter {
     calculatedCrc.copy(buffer, encryptedBuffer.length + 16)
     buffer.writeUInt32BE(0x0000aa55, encryptedBuffer.length + 48)
 
-    return this._socket.write(buffer)
+    return this._write(buffer)
   }
 
   private _send_3_5(o: SendPayload): boolean {
@@ -962,13 +1030,18 @@ class TuyaAccessory extends EventEmitter {
     header.writeUInt32BE(cmd, 10)
     header.writeUInt32BE((data as Buffer).length + 28, 14) // IV(12) + tag(16)
 
-    const encrypted = encrypt35Frame(data as Buffer, this.session_key ?? this.context.key, header.slice(4, 18))
-    return this._socket.write(Buffer.concat([header, encrypted]))
+    try {
+      const encrypted = encrypt35Frame(data as Buffer, this.session_key ?? this.context.key, header.slice(4, 18))
+      return this._write(Buffer.concat([header, encrypted]))
+    } catch (err) {
+      this.log.error(`Failed to send 3.5 command ${cmd} to ${this.context.name}: ${(err as Error).message}`)
+      return false
+    }
   }
 }
 
 const encrypt34 = (data: Buffer, encryptKey: string | Buffer): Buffer => {
-  const cipher = crypto.createCipheriv('aes-128-ecb', encryptKey, null)
+  const cipher = crypto.createCipheriv('aes-128-ecb', aes128Key(encryptKey), null)
   cipher.setAutoPadding(false)
   const encrypted = cipher.update(data)
   cipher.final()
@@ -978,14 +1051,14 @@ const encrypt34 = (data: Buffer, encryptKey: string | Buffer): Buffer => {
 /** Session-key derivation encrypt (tuyapi _encrypt35 without AAD — ciphertext only). */
 const encrypt35SessionKey = (data: Buffer, encryptKey: string | Buffer, ivSource: Buffer): Buffer => {
   const iv = ivSource.slice(0, 12)
-  const cipher = crypto.createCipheriv('aes-128-gcm', encryptKey, iv)
+  const cipher = crypto.createCipheriv('aes-128-gcm', aes128Key(encryptKey), iv)
   return Buffer.concat([cipher.update(data), cipher.final()])
 }
 
 /** Full 3.5 frame body: IV + ciphertext + tag + footer (tuyapi _encrypt35 with AAD). */
 const encrypt35Frame = (data: Buffer, encryptKey: string | Buffer, aad: Buffer): Buffer => {
-  const iv = Buffer.from((Date.now() * 10).toString().slice(0, 12))
-  const cipher = crypto.createCipheriv('aes-128-gcm', encryptKey, iv)
+  const iv = crypto.randomBytes(12)
+  const cipher = crypto.createCipheriv('aes-128-gcm', aes128Key(encryptKey), iv)
   cipher.setAAD(aad)
   const encrypted = Buffer.concat([cipher.update(data), cipher.final()])
   const tag = cipher.getAuthTag()
@@ -1001,7 +1074,7 @@ const decrypt35 = (data: Buffer, decryptKey: string | Buffer): Buffer => {
   const tag = data.slice(data.length - 16)
   const ciphertext = data.slice(26, data.length - 16)
 
-  const decipher = crypto.createDecipheriv('aes-128-gcm', decryptKey, iv)
+  const decipher = crypto.createDecipheriv('aes-128-gcm', aes128Key(decryptKey), iv)
   decipher.setAuthTag(tag)
   decipher.setAAD(header)
   const result = Buffer.concat([decipher.update(ciphertext), decipher.final()])
@@ -1010,6 +1083,17 @@ const decrypt35 = (data: Buffer, decryptKey: string | Buffer): Buffer => {
 
 const hmac = (data: Buffer, hmacKey: string | Buffer): Buffer => {
   return crypto.createHmac('sha256', hmacKey).update(data).digest()
+}
+
+const aes128Key = (key: string | Buffer): Buffer => {
+  if (Buffer.isBuffer(key) && key.length === 16) return key
+  const raw = Buffer.isBuffer(key) ? key : Buffer.from(key, 'utf8')
+  if (raw.length === 16) return raw
+  if (!Buffer.isBuffer(key) && key.length === 32 && /^[0-9a-f]+$/i.test(key)) {
+    return Buffer.from(key, 'hex')
+  }
+  if (raw.length > 16) return raw.subarray(0, 16)
+  return Buffer.concat([raw, Buffer.alloc(16 - raw.length)])
 }
 
 const crc32LookupTable: number[] = []

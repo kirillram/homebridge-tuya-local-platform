@@ -1,17 +1,23 @@
 import dgram from 'dgram'
 import crypto from 'crypto'
+import os from 'os'
 import { EventEmitter } from 'events'
 import type { Logger } from 'homebridge'
 import type { DiscoveredDevice } from '../types'
 
-// MD5("yGAdlopoPVldABfn") — well-known Tuya UDP broadcast key (same as tuyapi)
+// MD5("yGAdlopoPVldABfn") — well-known Tuya UDP broadcast key (same as tuyapi / tinytuya)
 const UDP_KEY = Buffer.from('6c1ec8e2bb9bb59ab50b0daf649b410a', 'hex')
 
 const PREFIX_55AA = 0x000055aa
 const SUFFIX_AA55 = 0x0000aa55
 const PREFIX_6699 = 0x00006699
 const SUFFIX_9966 = 0x00009966
-const CMD_REQ_DEVINFO = 0x25
+const CMD_REQ_DEVINFO = 0x25 // tinytuya REQ_DEVINFO — solicit v3.5 devices on UDP/7000
+
+interface LocalIPv4 {
+  address: string
+  broadcast: string
+}
 
 interface DiscoveryOptions {
   log: Logger
@@ -89,14 +95,20 @@ class TuyaDiscovery extends EventEmitter {
         /* ignore */
       }
       this.log.info(`Discovery - Discovery started on port ${port}.`)
+      // Wait until UDP/7000 is actually bound; send() before that kills the process
+      if (port === 7000 && this._running) this._solicit()
     })
   }
 
   private _stop(port: number): void {
-    if (this._servers[port]) {
-      this._servers[port]!.removeAllListeners()
-      this._servers[port]!.close()
-      this._servers[port] = null
+    const server = this._servers[port]
+    if (!server) return
+    this._servers[port] = null
+    server.removeAllListeners()
+    try {
+      server.close()
+    } catch (_ex) {
+      /* already closed / never bound */
     }
   }
 
@@ -104,7 +116,6 @@ class TuyaDiscovery extends EventEmitter {
     this._stopSolicitation()
     // Newer 3.5 devices may stay silent until solicited on UDP/7000
     this._solicitTimer = setInterval(() => this._solicit(), 5000)
-    process.nextTick(() => this._solicit())
   }
 
   private _stopSolicitation(): void {
@@ -118,12 +129,38 @@ class TuyaDiscovery extends EventEmitter {
     const server = this._servers[7000]
     if (!server || !this._running) return
 
-    try {
-      const payload = Buffer.from(JSON.stringify({ from: 'app', ip: ' ' }))
-      const packet = packGcmDiscovery(CMD_REQ_DEVINFO, payload)
-      server.send(packet, 0, packet.length, 7000, '255.255.255.255')
-    } catch (err) {
-      this.log.debug(`Discovery - Solicitation failed: ${(err as Error).message}`)
+    // Devices unicast their 3.5 discovery reply to this IP (tinytuya send_discovery_request)
+    const ifaces = getLocalIPv4s()
+    const targets: LocalIPv4[] = ifaces.length ? ifaces : [{ address: '255.255.255.255', broadcast: '255.255.255.255' }]
+
+    for (const { address, broadcast } of targets) {
+      try {
+        const payload = Buffer.from(JSON.stringify({ from: 'app', ip: address }))
+        const packet = packGcmDiscovery(CMD_REQ_DEVINFO, payload)
+        server.send(packet, 0, packet.length, 7000, broadcast, (err) => {
+          if (err) this.log.debug(`Discovery - Solicitation failed (${address} → ${broadcast}): ${err.message}`)
+        })
+        this.log.debug(`Discovery - soliciting 3.5 devices from ${address} → ${broadcast}:7000`)
+      } catch (err) {
+        this.log.debug(`Discovery - Solicitation failed (${address} → ${broadcast}): ${(err as Error).message}`)
+      }
+    }
+
+    // Some stacks drop directed broadcasts; also send a limited broadcast with a LAN IP
+    const lan =
+      targets.find((iface) => iface.address.startsWith('192.168.')) ||
+      targets.find((iface) => iface.address.startsWith('10.')) ||
+      targets[0]
+    if (lan && lan.broadcast !== '255.255.255.255') {
+      try {
+        const payload = Buffer.from(JSON.stringify({ from: 'app', ip: lan.address }))
+        const packet = packGcmDiscovery(CMD_REQ_DEVINFO, payload)
+        server.send(packet, 0, packet.length, 7000, '255.255.255.255', () => {
+          /* ignore broadcast fallback errors */
+        })
+      } catch (_err) {
+        /* already logged per-interface failures */
+      }
     }
   }
 
@@ -200,12 +237,20 @@ class TuyaDiscovery extends EventEmitter {
     if (!decryptedMsg) return
 
     try {
-      const result = JSON.parse(decryptedMsg)
-      if (result && result.gwId && result.ip) this._onDiscover(result)
-      else this.log.error(`Discovery - UDP from ${info.address}:${port} decrypted`, decryptedMsg)
+      const result = JSON.parse(decryptedMsg) as Record<string, unknown>
+      if (!result || result.from === 'app') return
+
+      const gwId = typeof result.gwId === 'string' ? result.gwId : ''
+      if (!gwId) {
+        this.log.debug(`Discovery - ignoring UDP from ${info.address}:${port}:`, decryptedMsg)
+        return
+      }
+
+      const reportedIp = typeof result.ip === 'string' ? result.ip.trim() : ''
+      result.ip = reportedIp || info.address
+      this._onDiscover(result as Record<string, unknown> & { gwId: string; ip: string })
     } catch (_ex) {
-      this.log.error(`Discovery - Failed to parse discovery response on port ${port}: ${decryptedMsg}`)
-      this.log.error(`Discovery - Failed to parse discovery raw message on port ${port}: ${msg.toString('hex')}`)
+      this.log.debug(`Discovery - Failed to parse discovery response on port ${port}: ${decryptedMsg}`)
     }
   }
 
@@ -234,7 +279,7 @@ class TuyaDiscovery extends EventEmitter {
 /**
  * Pack a 6699 AES-GCM discovery/solicitation frame (tuyapi / tinytuya compatible).
  */
-function packGcmDiscovery(cmd: number, plaintext: Buffer, seq = 1): Buffer {
+function packGcmDiscovery(cmd: number, plaintext: Buffer, seq = 0): Buffer {
   const header = Buffer.alloc(18)
   header.writeUInt32BE(PREFIX_6699, 0)
   header.writeUInt16BE(0, 4)
@@ -243,7 +288,7 @@ function packGcmDiscovery(cmd: number, plaintext: Buffer, seq = 1): Buffer {
   header.writeUInt32BE(plaintext.length + 28, 14) // IV(12) + tag(16)
 
   const aad = header.slice(4, 18)
-  const iv = Buffer.from((Date.now() * 10).toString().slice(0, 12))
+  const iv = crypto.randomBytes(12)
   const cipher = crypto.createCipheriv('aes-128-gcm', UDP_KEY, iv)
   cipher.setAAD(aad)
   const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()])
@@ -275,6 +320,40 @@ function decryptGcmDiscovery(msg: Buffer): string {
   }
 
   return result.toString('utf8').replace(/\0+$/g, '')
+}
+
+function ipv4Broadcast(address: string, netmask: string): string {
+  const addr = address.split('.').map(Number)
+  const mask = netmask.split('.').map(Number)
+  if (addr.length !== 4 || mask.length !== 4 || addr.some(Number.isNaN) || mask.some(Number.isNaN)) {
+    return '255.255.255.255'
+  }
+  return addr.map((octet, i) => (octet | (~mask[i] & 255)) >>> 0).join('.')
+}
+
+function getLocalIPv4s(): LocalIPv4[] {
+  let ifaces: NodeJS.Dict<os.NetworkInterfaceInfo[]>
+  try {
+    ifaces = os.networkInterfaces() || {}
+  } catch {
+    return []
+  }
+
+  const results: LocalIPv4[] = []
+  for (const addrs of Object.values(ifaces)) {
+    if (!addrs) continue
+    for (const addr of addrs) {
+      const family = addr.family as string | number
+      if (family !== 'IPv4' && family !== 4) continue
+      if (addr.internal) continue
+      if (addr.address.startsWith('169.254.')) continue
+      results.push({
+        address: addr.address,
+        broadcast: ipv4Broadcast(addr.address, addr.netmask),
+      })
+    }
+  }
+  return results
 }
 
 export default new TuyaDiscovery()
