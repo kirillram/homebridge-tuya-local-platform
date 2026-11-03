@@ -32,9 +32,22 @@ class BaseAccessory {
       this.log('Connected to', this.device.context.name)
     })
 
-    this.device.once('change', () => {
+    // Registered before any subclass listener, so DPs are adapted before the first report is applied.
+    // 3.4/3.5 connections emit an empty change on connect; wait for the first real DP report.
+    let ready = false
+    this.device.on('change', (_changes: DPSState, state: DPSState) => {
+      if (ready || !state || !Object.keys(state).length) return
+      ready = true
+      try {
+        this._adaptToDeviceState(state)
+        // Colour DPs are only known once the device reports; registration runs before that
+        if (this.colorFunction === 'Unknown' && this.dpColor && typeof state[this.dpColor] === 'string')
+          this._detectColorFunction(state[this.dpColor] as string)
+      } catch (err) {
+        this.log.error(`Failed to adapt to ${this.device.context.name} DPs: ${(err as Error).message}`)
+      }
       this.log(
-        `Ready to handle ${this.device.context.name} (${this.device.context.type}:${this.device.context.version}) with signature ${JSON.stringify(this.device.state)}`,
+        `Ready to handle ${this.device.context.name} (${this.device.context.type}:${this.device.context.version}) with signature ${JSON.stringify(state)}`,
       )
     })
 
@@ -64,6 +77,42 @@ class BaseAccessory {
 
   _registerCharacteristics(_dps: DPSState): void {
     // Override in subclasses
+  }
+
+  /** Called once with the first non-empty DP report, before subclass change listeners see it. */
+  _adaptToDeviceState(_state: DPSState): void {
+    // Override in subclasses
+  }
+
+  /**
+   * Tuya v2 lights (category "dj") report switch_led=20, work_mode=21, bright_value_v2=22,
+   * temp_value_v2=23 and colour_data_v2=24 instead of the legacy 1-5. When the device reports
+   * that layout, move every DP the user didn't configure to its v2 number and use v2 ranges.
+   */
+  _adoptV2LightLayout(state: DPSState, layout: Record<string, string>): void {
+    if (state['20'] === undefined || state['1'] !== undefined) return
+
+    const context = this.device.context as any
+    const self = this as any
+    const adopted: string[] = []
+    for (const [field, dp] of Object.entries(layout)) {
+      if (this._getCustomDP(context[field])) continue
+      self[field] = dp
+      adopted.push(
+        `${field
+          .replace(/^dp/, '')
+          .replace(/^ColorTemperature$/, 'color temperature')
+          .toLowerCase()} ${dp}`,
+      )
+    }
+    if (!adopted.length) return
+
+    // bright_value_v2 is 10-1000 and temp_value_v2 is 0-1000
+    if (!context.scaleBrightness) context.scaleBrightness = 1000
+    if (!context.minBrightness) context.minBrightness = 10
+    if (!context.scaleWhiteColor) context.scaleWhiteColor = 1000
+
+    this.log.info(`Detected Tuya v2 light DPs for ${context.name}: ${adopted.join(', ')}`)
   }
 
   /**
@@ -331,8 +380,15 @@ class BaseAccessory {
     return Math.min(500, Math.max(140, convertedValue))
   }
 
+  /** Colour format in use: the configured one, else the one detected from the device's colour DP. */
+  _colorFormat(): string {
+    const configured = String((this.device.context as any).colorFunction || '').toUpperCase()
+    if (configured === 'HSB' || configured === 'HEXHSB') return configured
+    return this.colorFunction || 'HEXHSB'
+  }
+
   convertColorFromHomeKitToTuya(value: Partial<HSBColor>, dpValue?: string): string {
-    switch ((this.device.context as any).colorFunction) {
+    switch (this._colorFormat()) {
       case 'HSB':
         return this.convertColorFromHomeKitToTuya_HSB(value, dpValue)
       default:
@@ -396,7 +452,7 @@ class BaseAccessory {
   }
 
   convertColorFromTuyaToHomeKit(value: string): HSBColor {
-    switch ((this.device.context as any).colorFunction) {
+    switch (this._colorFormat()) {
       case 'HSB':
         return this.convertColorFromTuya_HSB_ToHomeKit(value)
       default:

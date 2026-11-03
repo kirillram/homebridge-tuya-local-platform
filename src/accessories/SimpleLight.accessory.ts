@@ -1,5 +1,5 @@
 import BaseAccessory from './Base.accessory'
-import type { DPSState } from '../types'
+import type { DPSState, DPSValue, HomebridgeCallback } from '../types'
 
 class SimpleLightAccessory extends BaseAccessory {
   static getCategory(Categories: any): number {
@@ -29,8 +29,8 @@ class SimpleLightAccessory extends BaseAccessory {
 
     const characteristicOn = this._bind(
       service.getCharacteristic(Characteristic.On).updateValue(!!dps[this.dpPower]),
-      this.getPower.bind(this, this.dpPower),
-      this.setPower.bind(this, this.dpPower),
+      (callback: HomebridgeCallback) => this.getPower(this.dpPower, callback),
+      (value: DPSValue, callback: HomebridgeCallback) => this.setPower(this.dpPower, value, callback),
     )
 
     this.device.on('change', (changes: DPSState, state: DPSState) => {
@@ -38,6 +38,10 @@ class SimpleLightAccessory extends BaseAccessory {
         characteristicOn.updateValue(!!changes[this.dpPower])
       this.log.info('SimpleLight changed: ' + JSON.stringify(state))
     })
+  }
+
+  _adaptToDeviceState(state: DPSState): void {
+    this._adoptV2LightLayout(state, { dpPower: '20' })
   }
 }
 

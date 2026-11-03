@@ -33,8 +33,8 @@ class TWLightAccessory extends BaseAccessory {
 
     const characteristicOn = this._bind(
       service.getCharacteristic(Characteristic.On).updateValue(!!dps[this.dpPower]),
-      this.getPower.bind(this, this.dpPower),
-      this.setPower.bind(this, this.dpPower),
+      (callback: HomebridgeCallback) => this.getPower(this.dpPower, callback),
+      (value: DPSValue, callback: HomebridgeCallback) => this.setPower(this.dpPower, value, callback),
     )
 
     const characteristicBrightness = this._bind(
@@ -93,6 +93,10 @@ class TWLightAccessory extends BaseAccessory {
         )
       }
     })
+  }
+
+  _adaptToDeviceState(state: DPSState): void {
+    this._adoptV2LightLayout(state, { dpPower: '20', dpBrightness: '22', dpColorTemperature: '23' })
   }
 
   getBrightness(callback: HomebridgeCallback): void {

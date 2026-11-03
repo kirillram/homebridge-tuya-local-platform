@@ -66,8 +66,8 @@ class RGBTWLightAccessory extends BaseAccessory {
 
     const characteristicOn = this._bind(
       service.getCharacteristic(Characteristic.On).updateValue(!!dps[this.dpPower]),
-      this.getPower.bind(this, this.dpPower),
-      this.setPower.bind(this, this.dpPower),
+      (callback: HomebridgeCallback) => this.getPower(this.dpPower, callback),
+      (value: DPSValue, callback: HomebridgeCallback) => this.setPower(this.dpPower, value, callback),
     )
 
     const characteristicBrightness = this._bind(
@@ -185,6 +185,16 @@ class RGBTWLightAccessory extends BaseAccessory {
       } catch (err) {
         this.log.error(`Failed to apply state change for ${this.device.context.name}: ${(err as Error).message}`)
       }
+    })
+  }
+
+  _adaptToDeviceState(state: DPSState): void {
+    this._adoptV2LightLayout(state, {
+      dpPower: '20',
+      dpMode: '21',
+      dpBrightness: '22',
+      dpColorTemperature: '23',
+      dpColor: '24',
     })
   }
 
