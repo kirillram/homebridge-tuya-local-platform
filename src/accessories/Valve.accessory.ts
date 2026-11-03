@@ -50,9 +50,9 @@ class ValveAccessory extends BaseAccessory {
 
     const characteristicActive = service
       .getCharacteristic(Characteristic.Active)
-      .updateValue(dps[this.dpPower])
-      .on('get', this.getState.bind(this, this.dpPower))
-      .on('set', this.setState.bind(this, this.dpPower))
+      .updateValue(this._coerceBoolean(dps[this.dpPower], false))
+      .on('get', this.getPower.bind(this, this.dpPower))
+      .on('set', this.setPower.bind(this, this.dpPower))
 
     const characteristicInUse = service
       .getCharacteristic(Characteristic.InUse)

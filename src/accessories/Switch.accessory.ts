@@ -63,7 +63,7 @@ class SwitchAccessory extends BaseAccessory {
 
       characteristics[match[1]] = service
         .getCharacteristic(Characteristic.On)
-        .updateValue(dps[match[1]])
+        .updateValue(this._coerceBoolean(dps[match[1]], false))
         .on('get', this.getPower.bind(this, match[1]))
         .on('set', this.setPower.bind(this, match[1]))
     })
@@ -77,7 +77,7 @@ class SwitchAccessory extends BaseAccessory {
   }
 
   getPower(dp: string, callback: HomebridgeCallback): void {
-    callback(null, this.device.state[dp])
+    callback(null, this._coerceBoolean(this.device.state[dp], false))
   }
 
   setPower(dp?: string, value?: DPSValue, callback?: HomebridgeCallback): void {

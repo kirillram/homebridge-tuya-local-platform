@@ -141,6 +141,16 @@ describe('BaseAccessory', () => {
       expect(hkMin).toBe(1)
     })
 
+    it('clamps missing or below-min Tuya brightness to HomeKit 0-100', () => {
+      // Default min=27: Tuya 0 / undefined maps below HomeKit 0 and HAP throws
+      for (const value of [undefined, null, '', 0, -1]) {
+        const hk = base.convertBrightnessFromTuyaToHomeKit(value as any)
+        expect(hk).toBeGreaterThanOrEqual(0)
+        expect(hk).toBeLessThanOrEqual(100)
+        expect(Number.isFinite(hk)).toBe(true)
+      }
+    })
+
     it('should be reversible (round-trip)', () => {
       for (const hk of [1, 25, 50, 75, 100]) {
         const tuya = base.convertBrightnessFromHomeKitToTuya(hk)
@@ -273,18 +283,78 @@ describe('BaseAccessory', () => {
       expect((result as any).val).toEqual({ '1': true, '2': 50 })
     })
 
-    it('should return error when not connected', async () => {
+    it('returns cached state when not connected so HomeKit does not show No Response', async () => {
       device.connected = false
-      const result = await new Promise((resolve) => {
-        base.getState('1', (err) => resolve(err))
+      const result = await new Promise<{ err: any; val: any }>((resolve) => {
+        base.getState('1', (err, val) => resolve({ err, val }))
       })
-      expect(result).toBeInstanceOf(Error)
+      expect(result.err).toBeNull()
+      expect(result.val).toBe(true)
     })
 
     it('should call device.update on setState', () => {
       device.state['1'] = false
       base.setState('1', true)
       expect(device.update).toHaveBeenCalledWith({ '1': true })
+    })
+
+    it('completes a HomeKit set when the DP already matches (no Update failed)', async () => {
+      device.state['1'] = true
+      const result = await new Promise<{ err: any }>((resolve) => {
+        base.setState('1', true, (err) => resolve({ err }))
+      })
+      expect(device.update).not.toHaveBeenCalled()
+      expect(result.err).toBeNull()
+    })
+
+    it('does not fail a later set because a previous update returned false', async () => {
+      device.update.mockReturnValueOnce(false)
+      device.state['1'] = false
+      await new Promise<void>((resolve) => {
+        base.setState('1', true, () => resolve())
+      })
+
+      device.state['1'] = true
+      const result = await new Promise<{ err: any }>((resolve) => {
+        base.setState('1', true, (err) => resolve({ err }))
+      })
+      expect(result.err).toBeNull()
+    })
+
+    it('logs when a set cannot reach the device but still completes the HomeKit callback', async () => {
+      const { base, device, log } = createBaseAccessory()
+      device.connected = false
+      const result = await new Promise<{ err: any }>((resolve) => {
+        base.setState('1', true, (err) => resolve({ err }))
+      })
+      expect(result.err).toBeNull()
+      expect(log.warn).toHaveBeenCalled()
+    })
+
+    it('getPower never errors to HAP, even when disconnected or DPS are missing', async () => {
+      device.connected = false
+      device.state = {}
+      const result = await new Promise<{ err: any; val: any }>((resolve) => {
+        base.getPower('1', (err, val) => resolve({ err, val }))
+      })
+      expect(result.err).toBeNull()
+      expect(result.val).toBe(false)
+    })
+
+    it('does not pass undefined to HAP when a DP has no value yet', async () => {
+      device.state = {}
+      const result = await new Promise<{ err: any; val: any }>((resolve) => {
+        base.getState('1', (err, val) => resolve({ err, val }))
+      })
+      // HAP Characteristic.On throws if the get callback is (null, undefined)
+      expect(result.err || result.val !== undefined).toBeTruthy()
+    })
+
+    it('does not throw when identify is fired without a callback (Homebridge 2)', () => {
+      const { accessory } = createBaseAccessory()
+      const handler = accessory.on.mock.calls.find((c: any[]) => c[0] === 'identify')?.[1]
+      expect(typeof handler).toBe('function')
+      expect(() => handler()).not.toThrow()
     })
   })
 

@@ -74,6 +74,20 @@ describe('SimpleLightAccessory', () => {
 
       expect(light.dpPower).toBe('20')
     })
+
+    it('does not throw when registering characteristics before any DPS arrive', () => {
+      const { light, accessory, Service, Characteristic } = createSimpleLight()
+      light._registerPlatformAccessory()
+      const char = accessory.getService(Service.Lightbulb)!.getCharacteristic(Characteristic.On)
+      char.updateValue = vi.fn((value: unknown) => {
+        if (value === undefined || (typeof value === 'number' && Number.isNaN(value))) {
+          throw new Error('invalid characteristic value')
+        }
+        char.value = value
+        return char
+      })
+      expect(() => light._registerCharacteristics({})).not.toThrow()
+    })
   })
 
   describe('state management', () => {

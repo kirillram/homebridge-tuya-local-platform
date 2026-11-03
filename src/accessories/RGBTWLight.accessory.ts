@@ -66,9 +66,9 @@ class RGBTWLightAccessory extends BaseAccessory {
 
     const characteristicOn = service
       .getCharacteristic(Characteristic.On)
-      .updateValue(dps[this.dpPower])
-      .on('get', this.getState.bind(this, this.dpPower))
-      .on('set', this.setState.bind(this, this.dpPower))
+      .updateValue(!!dps[this.dpPower])
+      .on('get', this.getPower.bind(this, this.dpPower))
+      .on('set', this.setPower.bind(this, this.dpPower))
 
     const characteristicBrightness = service
       .getCharacteristic(Characteristic.Brightness)
@@ -111,75 +111,93 @@ class RGBTWLightAccessory extends BaseAccessory {
     this.characteristicColorTemperature = characteristicColorTemperature
 
     if (this.adaptiveLightingSupport()) {
-      this.adaptiveLightingController = new AdaptiveLightingController(service)
-      this.accessory.configureController(this.adaptiveLightingController)
-      ;(this.accessory as any).adaptiveLightingController = this.adaptiveLightingController
+      try {
+        this.adaptiveLightingController = new AdaptiveLightingController(service)
+        this.accessory.configureController(this.adaptiveLightingController)
+        ;(this.accessory as any).adaptiveLightingController = this.adaptiveLightingController
+      } catch (err) {
+        this.log.debug(`Adaptive Lighting not attached for ${this.device.context.name}: ${(err as Error).message}`)
+      }
     }
 
     this.device.on('change', (changes: DPSState, state: DPSState) => {
-      if (changes.hasOwnProperty(this.dpPower) && characteristicOn.value !== changes[this.dpPower])
-        characteristicOn.updateValue(changes[this.dpPower])
+      try {
+        if (changes.hasOwnProperty(this.dpPower) && characteristicOn.value !== !!changes[this.dpPower])
+          characteristicOn.updateValue(!!changes[this.dpPower])
 
-      switch (state[this.dpMode]) {
-        case this.cmdWhite:
-          if (
-            changes.hasOwnProperty(this.dpBrightness) &&
-            this.convertBrightnessFromHomeKitToTuya(characteristicBrightness.value as number) !==
-              changes[this.dpBrightness]
-          )
-            characteristicBrightness.updateValue(this.convertBrightnessFromTuyaToHomeKit(changes[this.dpBrightness]))
-
-          if (
-            changes.hasOwnProperty(this.dpColorTemperature) &&
-            this.convertColorTemperatureFromHomeKitToTuya(characteristicColorTemperature.value as number) !==
-              changes[this.dpColorTemperature]
-          ) {
-            const newColorTemperature = this.convertColorTemperatureFromTuyaToHomeKit(changes[this.dpColorTemperature])
-            const newColor = this.convertHomeKitColorTemperatureToHomeKitColor(newColorTemperature)
-            characteristicHue.updateValue(newColor.h)
-            characteristicSaturation.updateValue(newColor.s)
-            characteristicColorTemperature.updateValue(newColorTemperature)
-          } else if (changes[this.dpMode] && !changes.hasOwnProperty(this.dpColorTemperature)) {
-            const newColorTemperature = this.convertColorTemperatureFromTuyaToHomeKit(state[this.dpColorTemperature])
-            const newColor = this.convertHomeKitColorTemperatureToHomeKitColor(newColorTemperature)
-            characteristicHue.updateValue(newColor.h)
-            characteristicSaturation.updateValue(newColor.s)
-            characteristicColorTemperature.updateValue(newColorTemperature)
-          }
-          break
-
-        default:
-          if (changes.hasOwnProperty(this.dpColor)) {
-            const oldColor = this.convertColorFromTuyaToHomeKit(
-              this.convertColorFromHomeKitToTuya({
-                h: characteristicHue.value as number,
-                s: characteristicSaturation.value as number,
-                b: characteristicBrightness.value as number,
-              }),
+        switch (state[this.dpMode]) {
+          case this.cmdWhite:
+            if (
+              changes.hasOwnProperty(this.dpBrightness) &&
+              this.convertBrightnessFromHomeKitToTuya(characteristicBrightness.value as number) !==
+                changes[this.dpBrightness]
             )
-            const newColor = this.convertColorFromTuyaToHomeKit(changes[this.dpColor])
+              characteristicBrightness.updateValue(this.convertBrightnessFromTuyaToHomeKit(changes[this.dpBrightness]))
 
-            if (oldColor.b !== newColor.b) characteristicBrightness.updateValue(newColor.b)
-            if (oldColor.h !== newColor.h) characteristicHue.updateValue(newColor.h)
-            if (oldColor.s !== newColor.s) characteristicSaturation.updateValue(newColor.h)
-            if (characteristicColorTemperature.value !== 0) characteristicColorTemperature.updateValue(0)
-          } else if (changes[this.dpMode]) {
-            if (characteristicColorTemperature.value !== 0) characteristicColorTemperature.updateValue(0)
-          }
+            if (
+              changes.hasOwnProperty(this.dpColorTemperature) &&
+              this.convertColorTemperatureFromHomeKitToTuya(characteristicColorTemperature.value as number) !==
+                changes[this.dpColorTemperature]
+            ) {
+              const newColorTemperature = this.convertColorTemperatureFromTuyaToHomeKit(
+                changes[this.dpColorTemperature],
+              )
+              const newColor = this.convertHomeKitColorTemperatureToHomeKitColor(newColorTemperature)
+              characteristicHue.updateValue(newColor.h)
+              characteristicSaturation.updateValue(newColor.s)
+              characteristicColorTemperature.updateValue(newColorTemperature)
+            } else if (changes[this.dpMode] && !changes.hasOwnProperty(this.dpColorTemperature)) {
+              const newColorTemperature = this.convertColorTemperatureFromTuyaToHomeKit(state[this.dpColorTemperature])
+              const newColor = this.convertHomeKitColorTemperatureToHomeKitColor(newColorTemperature)
+              characteristicHue.updateValue(newColor.h)
+              characteristicSaturation.updateValue(newColor.s)
+              characteristicColorTemperature.updateValue(newColorTemperature)
+            }
+            break
+
+          default:
+            if (changes.hasOwnProperty(this.dpColor)) {
+              const oldColor = this.convertColorFromTuyaToHomeKit(
+                this.convertColorFromHomeKitToTuya({
+                  h: characteristicHue.value as number,
+                  s: characteristicSaturation.value as number,
+                  b: characteristicBrightness.value as number,
+                }),
+              )
+              const newColor = this.convertColorFromTuyaToHomeKit(changes[this.dpColor] as string)
+
+              if (oldColor.b !== newColor.b) characteristicBrightness.updateValue(newColor.b)
+              if (oldColor.h !== newColor.h) characteristicHue.updateValue(newColor.h)
+              if (oldColor.s !== newColor.s) characteristicSaturation.updateValue(newColor.s)
+              if (characteristicColorTemperature.value !== 0) characteristicColorTemperature.updateValue(0)
+            } else if (changes[this.dpMode]) {
+              if (characteristicColorTemperature.value !== 0) characteristicColorTemperature.updateValue(0)
+            }
+        }
+      } catch (err) {
+        this.log.error(`Failed to apply state change for ${this.device.context.name}: ${(err as Error).message}`)
       }
     })
   }
 
   getBrightness(callback: HomebridgeCallback): void {
-    if (this.device.state[this.dpMode] === this.cmdWhite)
-      return callback(null, this.convertBrightnessFromTuyaToHomeKit(this.device.state[this.dpBrightness]))
-    callback(null, this.convertColorFromTuyaToHomeKit(this.device.state[this.dpColor]).b)
+    try {
+      if (this.device.state[this.dpMode] === this.cmdWhite)
+        return callback(null, this.convertBrightnessFromTuyaToHomeKit(this.device.state[this.dpBrightness]))
+      callback(null, this.convertColorFromTuyaToHomeKit(this.device.state[this.dpColor] as string).b)
+    } catch (err) {
+      callback(err as Error)
+    }
   }
 
   setBrightness(value: DPSValue, callback: HomebridgeCallback): void {
-    if (this.device.state[this.dpMode] === this.cmdWhite)
-      return this.setState(this.dpBrightness, this.convertBrightnessFromHomeKitToTuya(value), callback)
-    this.setState(this.dpColor, this.convertColorFromHomeKitToTuya({ b: value as number }), callback)
+    try {
+      if (this.device.state[this.dpMode] === this.cmdWhite)
+        return this.setState(this.dpBrightness, this.convertBrightnessFromHomeKitToTuya(value), callback)
+      this.setState(this.dpColor, this.convertColorFromHomeKitToTuya({ b: value as number }), callback)
+    } catch (err) {
+      callback(err as Error)
+    }
   }
 
   getColorTemperature(callback: HomebridgeCallback): void {

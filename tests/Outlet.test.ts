@@ -77,6 +77,20 @@ describe('OutletAccessory', () => {
 
       expect(outlet.dpPower).toBe('5')
     })
+
+    it('still attaches On set/get handlers when registering before any DPS arrive', () => {
+      const { outlet, accessory, Service, Characteristic } = createOutlet()
+      outlet._registerPlatformAccessory()
+      const char = accessory.getService(Service.Outlet)!.getCharacteristic(Characteristic.On)
+      char.updateValue = vi.fn((value: unknown) => {
+        if (value === undefined) throw new Error('invalid characteristic value')
+        char.value = value
+        return char
+      })
+      expect(() => outlet._registerCharacteristics({})).not.toThrow()
+      expect(char.on).toHaveBeenCalledWith('set', expect.any(Function))
+      expect(char.on).toHaveBeenCalledWith('get', expect.any(Function))
+    })
   })
 
   describe('power control', () => {

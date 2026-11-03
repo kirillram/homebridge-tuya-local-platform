@@ -136,9 +136,9 @@ class OilDiffuserAccessory extends BaseAccessory {
 
     const characteristicLightOn = lightService
       .getCharacteristic(Characteristic.On)
-      .updateValue(dps[this.dpLight])
-      .on('get', this.getState.bind(this, this.dpLight))
-      .on('set', this.setState.bind(this, this.dpLight))
+      .updateValue(this._coerceBoolean(dps[this.dpLight], false))
+      .on('get', this.getPower.bind(this, this.dpLight))
+      .on('set', this.setPower.bind(this, this.dpLight))
 
     const characteristicBrightness = lightService
       .getCharacteristic(Characteristic.Brightness)

@@ -15,7 +15,6 @@ class BaseAccessory {
   hap: HAPContext
   colorFunction?: string
   dpColor!: string
-  private __ret?: boolean
 
   constructor(...props: any[]) {
     let isNew: boolean
@@ -25,12 +24,11 @@ class BaseAccessory {
       api: { hap: this.hap },
     } = this.platform)
 
-    if (isNew) this._registerPlatformAccessory()
-
-    this.accessory.on('identify', ((paired: boolean, callback: () => void) => {
+    this.accessory.on('identify', (...args: any[]) => {
       this.log('%s - identify', this.device.context.name)
-      callback()
-    }) as any)
+      const cb = args.find((arg) => typeof arg === 'function')
+      if (cb) cb()
+    })
 
     this.device.once('connect', () => {
       this.log('Connected to', this.device.context.name)
@@ -40,9 +38,24 @@ class BaseAccessory {
       this.log(
         `Ready to handle ${this.device.context.name} (${this.device.context.type}:${this.device.context.version}) with signature ${JSON.stringify(this.device.state)}`,
       )
-
-      this._registerCharacteristics(this.device.state)
     })
+
+    // Subclass field initializers and constructor bodies run only after super() returns, so
+    // registering here would read (and then lose) unset DPs/commands. Finish setup once the
+    // whole constructor chain is done.
+    queueMicrotask(() => this._setup(isNew))
+  }
+
+  _setup(isNew: boolean): void {
+    try {
+      if (isNew) this._registerPlatformAccessory()
+      this._registerCharacteristics(this.device.state)
+      this.log.info(`Registered HomeKit handlers for ${this.device.context.name}`)
+    } catch (err) {
+      this.log.error(
+        `Failed to register characteristics for ${this.device.context.name}: ${(err as Error).stack || err}`,
+      )
+    }
 
     this.device._connect()
   }
@@ -92,20 +105,35 @@ class BaseAccessory {
   }
 
   getState(dp: string | string[], callback: HomebridgeCallback): void {
-    if (!this.device.connected) return callback(new Error('Not connected'))
+    // Never pass Error to HAP GET — HomeKit treats it as SERVICE_COMMUNICATION_FAILURE
+    // and the Home app sticks on "No Response", then stops sending SET requests.
     const _callback = () => {
-      if (Array.isArray(dp)) {
-        const ret: DPSState = {}
-        dp.forEach((p) => {
-          ret[p] = this.device.state[p]
-        })
-        callback(null, ret as any)
-      } else {
-        callback(null, this.device.state[dp])
+      try {
+        if (Array.isArray(dp)) {
+          const ret: DPSState = {}
+          dp.forEach((p) => {
+            const value = this.device.state[p]
+            ret[p] = value === undefined || value === null ? 0 : value
+          })
+          callback(null, ret as any)
+        } else {
+          const value = this.device.state[dp]
+          callback(null, value === undefined || value === null ? 0 : value)
+        }
+      } catch {
+        callback(null, 0)
       }
     }
 
     process.nextTick(_callback)
+  }
+
+  getPower(dp: string, callback: HomebridgeCallback): void {
+    callback(null, this._coerceBoolean(this.device.state[dp], false))
+  }
+
+  setPower(dp: string, value: DPSValue, callback?: HomebridgeCallback): void {
+    this.setState(dp, this._coerceBoolean(value, false), callback)
   }
 
   setState(dp: string, value: DPSValue, callback?: HomebridgeCallback): void {
@@ -113,30 +141,34 @@ class BaseAccessory {
   }
 
   setMultiStateLegacy(dps: DPSState, callback: HomebridgeCallback): void {
-    if (!this.device.connected) return callback(new Error('Not connected'))
-    const ret = this.device.update(dps)
-    if (callback) callback(!ret ? new Error('Update failed') : null)
+    this.setMultiState(dps, callback)
   }
 
   setMultiState(dps: DPSState, callback?: HomebridgeCallback): void {
-    if (!this.device.connected) {
-      if (callback) callback(new Error('Not connected'))
-      return
-    }
-    for (const dp in dps) {
-      if (dps.hasOwnProperty(dp) && dps[dp] !== this.device.state[dp]) {
-        this.__ret = this.device.update({ [dp.toString()]: dps[dp] })
+    this.log.info(`${this.device.context.name}: set ${JSON.stringify(dps)}`)
+    try {
+      if (!this.device.connected) {
+        this.log.warn(`${this.device.context.name} is not connected; cannot update state`)
+        if (callback) callback(null)
+        return
       }
+      for (const dp in dps) {
+        if (dps.hasOwnProperty(dp) && dps[dp] !== this.device.state[dp]) {
+          if (!this.device.update({ [dp.toString()]: dps[dp] })) {
+            this.log.warn(`Failed to update ${this.device.context.name}: ${JSON.stringify(dps)}`)
+          }
+        }
+      }
+      if (callback) callback(null)
+    } catch (err) {
+      this.log.error(`Failed to update ${this.device.context.name}: ${(err as Error).stack || err}`)
+      if (callback) callback(null)
     }
-    if (callback) callback(!this.__ret ? new Error('Update failed') : null)
   }
 
   getDividedState(dp: string, divisor: number, callback: HomebridgeCallback): void {
-    this.getState(dp, (err, data) => {
-      if (err) return callback(err)
-      if (!isFinite(data as number)) return callback(new Error('Invalid data'))
-
-      callback(null, this._getDividedState(data as number, divisor))
+    this.getState(dp, (_err, data) => {
+      callback(null, this._getDividedState((data as number) ?? 0, divisor))
     })
   }
 
@@ -175,7 +207,9 @@ class BaseAccessory {
   convertBrightnessFromTuyaToHomeKit(value: number | string): number {
     const min = (this.device.context as any).minBrightness || 27
     const scale = (this.device.context as any).scaleBrightness || 255
-    return Math.round((99 * (Number(value) || 0) - 100 * min + scale) / (scale - min))
+    const converted = Math.round((99 * (Number(value) || 0) - 100 * min + scale) / (scale - min))
+    if (!Number.isFinite(converted)) return 0
+    return Math.min(100, Math.max(0, converted))
   }
 
   convertRotationSpeedFromHomeKitToTuya(value: number): number | string {
@@ -205,6 +239,7 @@ class BaseAccessory {
     const scale = (this.device.context as any).scaleWhiteColor || 255
     const unadjustedValue = max / ((Number(value) * (max - min)) / (scale * min) + 1)
     const convertedValue = Math.round(((unadjustedValue - 153) * (600 - 71)) / (max - min) + 71)
+    if (!Number.isFinite(convertedValue)) return 140
     return Math.min(600, Math.max(71, convertedValue))
   }
 
@@ -219,7 +254,9 @@ class BaseAccessory {
 
   convertColorFromHomeKitToTuya_HEXHSB(value: Partial<HSBColor>, dpValue?: string): string {
     const cached = this.convertColorFromTuya_HEXHSB_ToHomeKit(dpValue || (this.device.state[this.dpColor] as string))
-    const { h, s, b } = { ...cached, ...value }
+    const h = Number({ ...cached, ...value }.h) || 0
+    const s = Number({ ...cached, ...value }.s) || 0
+    const b = Number({ ...cached, ...value }.b) || 0
     const hsb =
       h.toString(16).padStart(4, '0') +
       Math.round(2.55 * s)
@@ -262,7 +299,9 @@ class BaseAccessory {
 
   convertColorFromHomeKitToTuya_HSB(value: Partial<HSBColor>, dpValue?: string): string {
     const cached = this.convertColorFromTuya_HSB_ToHomeKit(dpValue || (this.device.state[this.dpColor] as string))
-    const { h, s, b } = { ...cached, ...value }
+    const h = Number({ ...cached, ...value }.h) || 0
+    const s = Number({ ...cached, ...value }.s) || 0
+    const b = Number({ ...cached, ...value }.b) || 0
     return (
       h.toString(16).padStart(4, '0') + (10 * s).toString(16).padStart(4, '0') + (10 * b).toString(16).padStart(4, '0')
     )
@@ -285,9 +324,9 @@ class BaseAccessory {
       'ff',
     ]
     return {
-      h: parseInt(h, 16),
-      s: Math.round(parseInt(s, 16) / 2.55),
-      b: Math.round(parseInt(b, 16) / 2.55),
+      h: Math.min(360, Math.max(0, parseInt(h, 16) || 0)),
+      s: Math.min(100, Math.max(0, Math.round(parseInt(s, 16) / 2.55))),
+      b: Math.min(100, Math.max(0, Math.round(parseInt(b, 16) / 2.55))),
     }
   }
 
@@ -299,9 +338,9 @@ class BaseAccessory {
       '3e8',
     ]
     return {
-      h: parseInt(h, 16),
-      s: Math.round(parseInt(s, 16) / 10),
-      b: Math.round(parseInt(b, 16) / 10),
+      h: Math.min(360, Math.max(0, parseInt(h, 16) || 0)),
+      s: Math.min(100, Math.max(0, Math.round(parseInt(s, 16) / 10))),
+      b: Math.min(100, Math.max(0, Math.round(parseInt(b, 16) / 10))),
     }
   }
 

@@ -211,37 +211,20 @@ class TuyaLocalPlatform {
   }
 
   configureAccessory(accessory: any): void {
-    if (accessory instanceof PlatformAccessory && this._expectedUUIDs && this._expectedUUIDs.includes(accessory.UUID)) {
-      this.cachedAccessories.set(accessory.UUID, accessory)
-      accessory.services.forEach((service: any) => {
-        if (service.UUID === Service.AccessoryInformation.UUID) return
-        service.characteristics.some((characteristic: any) => {
-          if (
-            !characteristic.props ||
-            !Array.isArray(characteristic.props.perms) ||
-            characteristic.props.perms.length !== 3 ||
-            !(
-              characteristic.props.perms.includes(Characteristic.Perms.WRITE) &&
-              characteristic.props.perms.includes(Characteristic.Perms.NOTIFY)
-            )
-          )
-            return
-
-          this.log.info(
-            'Marked %s unreachable by faulting Service.%s.%s',
-            accessory.displayName,
-            service.displayName,
-            characteristic.displayName,
-          )
-
-          characteristic.updateValue(new Error('Unreachable'))
-          return true
-        })
-      })
-    } else {
-      setTimeout(() => {
-        this.removeAccessory(accessory)
-      }, 1000)
+    try {
+      if (
+        accessory instanceof PlatformAccessory &&
+        this._expectedUUIDs &&
+        this._expectedUUIDs.includes(accessory.UUID)
+      ) {
+        this.cachedAccessories.set(accessory.UUID, accessory)
+      } else {
+        setTimeout(() => {
+          this.removeAccessory(accessory)
+        }, 1000)
+      }
+    } catch (err) {
+      this.log.error('Failed to configure cached accessory: %s', (err as Error).stack || err)
     }
   }
 
@@ -249,44 +232,53 @@ class TuyaLocalPlatform {
     const deviceConfig = device.context
     const type = (deviceConfig.type || '').toLowerCase()
 
-    const Accessory = CLASS_DEF[type]
+    try {
+      const Accessory = CLASS_DEF[type]
 
-    let accessory = this.cachedAccessories.get(deviceConfig.UUID)
-    let isCached = true
+      let accessory = this.cachedAccessories.get(deviceConfig.UUID)
+      let isCached = true
 
-    if (accessory && accessory.category !== Accessory.getCategory(Categories)) {
-      this.log.info(
-        '%s has a different type (%s vs %s)',
-        accessory.displayName,
-        accessory.category,
-        Accessory.getCategory(Categories),
-      )
-      this.removeAccessory(accessory)
-      accessory = null
-    }
+      if (accessory && accessory.category !== Accessory.getCategory(Categories)) {
+        this.log.info(
+          '%s has a different type (%s vs %s)',
+          accessory.displayName,
+          accessory.category,
+          Accessory.getCategory(Categories),
+        )
+        this.removeAccessory(accessory)
+        accessory = null
+      }
 
-    if (!accessory) {
-      accessory = new PlatformAccessory(deviceConfig.name, deviceConfig.UUID, Accessory.getCategory(Categories))
-      accessory
-        .getService(Service.AccessoryInformation)
-        .setCharacteristic(Characteristic.Manufacturer, deviceConfig.manufacturer || 'Unknown')
-        .setCharacteristic(Characteristic.Model, deviceConfig.model || 'Unknown')
-        .setCharacteristic(Characteristic.SerialNumber, deviceConfig.id.slice(8))
+      if (!accessory) {
+        accessory = new PlatformAccessory(deviceConfig.name, deviceConfig.UUID, Accessory.getCategory(Categories))
+        accessory
+          .getService(Service.AccessoryInformation)
+          .setCharacteristic(Characteristic.Manufacturer, deviceConfig.manufacturer || 'Unknown')
+          .setCharacteristic(Characteristic.Model, deviceConfig.model || 'Unknown')
+          .setCharacteristic(Characteristic.SerialNumber, deviceConfig.id.slice(8))
 
-      isCached = false
-    }
+        isCached = false
+      }
 
-    if (accessory && accessory.displayName !== deviceConfig.name) {
-      this.log.info(
-        'Configuration name %s differs from cached displayName %s. Updating cached displayName to %s ',
+      if (accessory && accessory.displayName !== deviceConfig.name) {
+        this.log.info(
+          'Configuration name %s differs from cached displayName %s. Updating cached displayName to %s ',
+          deviceConfig.name,
+          accessory.displayName,
+          deviceConfig.name,
+        )
+        accessory.displayName = deviceConfig.name
+      }
+
+      this.cachedAccessories.set(deviceConfig.UUID, new Accessory(this, accessory, device, !isCached))
+    } catch (err) {
+      this.log.error(
+        'Failed to add accessory %s (%s): %s',
         deviceConfig.name,
-        accessory.displayName,
-        deviceConfig.name,
+        deviceConfig.id,
+        (err as Error).stack || err,
       )
-      accessory.displayName = deviceConfig.name
     }
-
-    this.cachedAccessories.set(deviceConfig.UUID, new Accessory(this, accessory, device, !isCached))
   }
 
   removeAccessory(homebridgeAccessory: any): void {

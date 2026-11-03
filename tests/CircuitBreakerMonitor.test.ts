@@ -88,19 +88,22 @@ describe('CircuitBreakerMonitorAccessory', () => {
     expect(acc._getTemperature({ '103': 245 })).toBe(24.5)
   })
 
-  it('getTemperature returns error when DP value is not yet available', () => {
+  it('getTemperature returns a numeric fallback when DP value is not yet available', () => {
     const { acc } = createCircuitBreaker()
     acc.device.connected = true
     acc.device.state = {}
 
-    let cbErr: Error | null = null
-    acc.getTemperature((err: Error | null) => {
+    let cbErr: Error | null = new Error('unset')
+    let cbVal: unknown
+    acc.getTemperature((err: Error | null, val?: unknown) => {
       cbErr = err
+      cbVal = val
     })
 
     return new Promise<void>((resolve) => {
       process.nextTick(() => {
-        expect(cbErr).toBeInstanceOf(Error)
+        expect(cbErr).toBeNull()
+        expect(typeof cbVal).toBe('number')
         resolve()
       })
     })

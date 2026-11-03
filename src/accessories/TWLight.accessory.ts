@@ -33,9 +33,9 @@ class TWLightAccessory extends BaseAccessory {
 
     const characteristicOn = service
       .getCharacteristic(Characteristic.On)
-      .updateValue(dps[this.dpPower])
-      .on('get', this.getState.bind(this, this.dpPower))
-      .on('set', this.setState.bind(this, this.dpPower))
+      .updateValue(!!dps[this.dpPower])
+      .on('get', this.getPower.bind(this, this.dpPower))
+      .on('set', this.setPower.bind(this, this.dpPower))
 
     const characteristicBrightness = service
       .getCharacteristic(Characteristic.Brightness)
@@ -56,14 +56,18 @@ class TWLightAccessory extends BaseAccessory {
     this.characteristicColorTemperature = characteristicColorTemperature
 
     if (this.adaptiveLightingSupport()) {
-      this.adaptiveLightingController = new AdaptiveLightingController(service)
-      this.accessory.configureController(this.adaptiveLightingController)
-      ;(this.accessory as any).adaptiveLightingController = this.adaptiveLightingController
+      try {
+        this.adaptiveLightingController = new AdaptiveLightingController(service)
+        this.accessory.configureController(this.adaptiveLightingController)
+        ;(this.accessory as any).adaptiveLightingController = this.adaptiveLightingController
+      } catch (err) {
+        this.log.debug(`Adaptive Lighting not attached for ${this.device.context.name}: ${(err as Error).message}`)
+      }
     }
 
     this.device.on('change', (changes: DPSState, state: DPSState) => {
-      if (changes.hasOwnProperty(this.dpPower) && characteristicOn.value !== changes[this.dpPower])
-        characteristicOn.updateValue(changes[this.dpPower])
+      if (changes.hasOwnProperty(this.dpPower) && characteristicOn.value !== !!changes[this.dpPower])
+        characteristicOn.updateValue(!!changes[this.dpPower])
 
       if (
         changes.hasOwnProperty(this.dpBrightness) &&

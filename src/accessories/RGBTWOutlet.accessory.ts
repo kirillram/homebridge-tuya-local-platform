@@ -104,9 +104,9 @@ class RGBTWOutletAccessory extends BaseAccessory {
 
     const characteristicLightOn = lightService
       .getCharacteristic(Characteristic.On)
-      .updateValue(dps[this.dpLight])
-      .on('get', this.getState.bind(this, this.dpLight))
-      .on('set', this.setState.bind(this, this.dpLight))
+      .updateValue(this._coerceBoolean(dps[this.dpLight], false))
+      .on('get', this.getPower.bind(this, this.dpLight))
+      .on('set', this.setPower.bind(this, this.dpLight))
 
     const characteristicBrightness = lightService
       .getCharacteristic(Characteristic.Brightness)
@@ -174,9 +174,9 @@ class RGBTWOutletAccessory extends BaseAccessory {
 
     const characteristicOutletOn = outletService
       .getCharacteristic(Characteristic.On)
-      .updateValue(dps[this.dpPower])
-      .on('get', this.getState.bind(this, this.dpPower))
-      .on('set', this.setState.bind(this, this.dpPower))
+      .updateValue(this._coerceBoolean(dps[this.dpPower], false))
+      .on('get', this.getPower.bind(this, this.dpPower))
+      .on('set', this.setPower.bind(this, this.dpPower))
 
     this.device.on('change', (changes: DPSState, state: DPSState) => {
       if (changes.hasOwnProperty(this.dpLight) && characteristicLightOn.value !== changes[this.dpLight])

@@ -29,13 +29,13 @@ class SimpleLightAccessory extends BaseAccessory {
 
     const characteristicOn = service
       .getCharacteristic(Characteristic.On)
-      .updateValue(dps[this.dpPower])
-      .on('get', this.getState.bind(this, this.dpPower))
-      .on('set', this.setState.bind(this, this.dpPower))
+      .updateValue(!!dps[this.dpPower])
+      .on('get', this.getPower.bind(this, this.dpPower))
+      .on('set', this.setPower.bind(this, this.dpPower))
 
     this.device.on('change', (changes: DPSState, state: DPSState) => {
-      if (changes.hasOwnProperty(this.dpPower) && characteristicOn.value !== changes[this.dpPower])
-        characteristicOn.updateValue(changes[this.dpPower])
+      if (changes.hasOwnProperty(this.dpPower) && characteristicOn.value !== !!changes[this.dpPower])
+        characteristicOn.updateValue(!!changes[this.dpPower])
       this.log.info('SimpleLight changed: ' + JSON.stringify(state))
     })
   }
