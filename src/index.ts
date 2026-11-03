@@ -104,7 +104,6 @@ class TuyaLocalPlatform {
 
   discoverDevices(): void {
     const devices: Record<string, TuyaDeviceConfig & { name: string }> = {}
-    const connectedDevices: string[] = []
     const fakeDevices: (TuyaDeviceConfig & { name: string })[] = []
 
     this.config.devices.forEach((device: TuyaDeviceConfig) => {
@@ -137,12 +136,26 @@ class TuyaLocalPlatform {
 
     this.log.info('Starting discovery...')
 
+    const addedIds = new Set<string>()
+    const addDevice = (deviceId: string, discovered?: Record<string, unknown>): void => {
+      if (addedIds.has(deviceId) || !devices[deviceId]) return
+      addedIds.add(deviceId)
+
+      const device = new TuyaAccessory({
+        ...devices[deviceId],
+        ...discovered,
+        version: devices[deviceId].version || (discovered && (discovered.version as string)) || undefined,
+        log: this.log,
+        UUID: UUID.generate(PLUGIN_NAME + ':' + deviceId),
+        connect: false,
+      })
+      this.addAccessory(device)
+    }
+
     TuyaDiscovery.start({ ids: deviceIds, log: this.log }).on('discover', (config: any) => {
       if (!config || !config.id) return
       if (!devices[config.id])
         return this.log.warn('Discovered a device that has not been configured yet (%s@%s).', config.id, config.ip)
-
-      connectedDevices.push(config.id)
 
       this.log.info(
         'Discovered %s (%s) identified as %s (%s)',
@@ -152,16 +165,7 @@ class TuyaLocalPlatform {
         config.version,
       )
 
-      const device = new TuyaAccessory({
-        ...devices[config.id],
-        ...config,
-        // Prefer explicitly configured version over discovery when set
-        version: devices[config.id].version || config.version,
-        log: this.log,
-        UUID: UUID.generate(PLUGIN_NAME + ':' + config.id),
-        connect: false,
-      })
-      this.addAccessory(device)
+      addDevice(config.id, config)
     })
 
     fakeDevices.forEach((config) => {
@@ -176,28 +180,42 @@ class TuyaLocalPlatform {
       )
     })
 
+    deviceIds.forEach((deviceId) => {
+      if (!devices[deviceId].ip || !devices[deviceId].version) return
+      this.log.info(
+        'Connecting to %s (%s) at %s (protocol %s) without waiting for discovery.',
+        devices[deviceId].name,
+        deviceId,
+        devices[deviceId].ip,
+        devices[deviceId].version,
+      )
+      addDevice(deviceId)
+    })
+
     setTimeout(() => {
       deviceIds.forEach((deviceId) => {
-        if (connectedDevices.includes(deviceId)) return
-
-        if (devices[deviceId].ip) {
-          this.log.info(
-            'Failed to discover %s (%s) in time but will connect via %s.',
+        if (addedIds.has(deviceId) || !devices[deviceId].ip) return
+        this.log.info(
+          'Failed to discover %s (%s) in time but will connect via %s.',
+          devices[deviceId].name,
+          deviceId,
+          devices[deviceId].ip,
+        )
+        if (!devices[deviceId].version) {
+          this.log.warn(
+            '%s (%s) has no protocol version set. 3.5 devices need "version": "3.5" in config.',
             devices[deviceId].name,
             deviceId,
-            devices[deviceId].ip,
           )
-
-          const device = new TuyaAccessory({
-            ...devices[deviceId],
-            log: this.log,
-            UUID: UUID.generate(PLUGIN_NAME + ':' + deviceId),
-            connect: false,
-          })
-          this.addAccessory(device)
-        } else {
-          this.log.warn('Failed to discover %s (%s) in time but will keep looking.', devices[deviceId].name, deviceId)
         }
+        addDevice(deviceId)
+      })
+    }, 8000)
+
+    setTimeout(() => {
+      deviceIds.forEach((deviceId) => {
+        if (addedIds.has(deviceId)) return
+        this.log.warn('Failed to discover %s (%s) in time but will keep looking.', devices[deviceId].name, deviceId)
       })
     }, 60000)
   }
